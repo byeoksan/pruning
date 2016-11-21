@@ -157,9 +157,13 @@ function evaluation(dataset, batch_size)
 		local inputs = dataset.data[{ {i,i+size-1} }]
 		local targets = dataset.labels[{ {i,i+size-1} }]
 
+        if optParam.cuda then
+            targets = targets:cudaLong()
+        end
+
 		local outputs = model:forward(inputs)
 		local _, indices = torch.max(outputs, 2)
-		local cnt_right = indices:eq(targets:long()):sum()
+		local cnt_right = indices:eq(targets):sum()
 	
 		cnt_correct = cnt_correct + cnt_right
 	end
@@ -191,8 +195,8 @@ decreasing = 0
 threshold = 2
 
 for i = 1, optParam.maxIter do
-	local loss = step(optParam.batchsize)
 	print(string.format('Epoch %d,', i))
+	local loss = step(optParam.batchsize)
 	print(string.format('	Train loss		: %.8f', loss))
 	local acc_train = evaluation(trainset, optParam.batchsize)
 	print(string.format('	Train Accuracy		: %.8f', acc_train*100))
