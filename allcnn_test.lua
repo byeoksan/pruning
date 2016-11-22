@@ -36,6 +36,7 @@ torch.manualSeed(1)
 -- 1. Data load and Normalization
 --------------------------------------------------------------------------------
 trainData, testData = datasrc.init()	-- data load
+datasrc.normalize(trainData, testData)
 sizeParam = {
 	sizetr = 40000,
 	sizevalid = 10000,
@@ -48,8 +49,8 @@ trainset = {
 }
 validationset = {
 	size = sizeParam.sizevalid,
-	data = trainData.data[{ {1,sizeParam.sizevalid} }],
-	labels = trainData.labels[{ {1,sizeParam.sizevalid} }]
+	data = trainData.data[{ {sizeParam.sizetr+1, sizeParam.sizetr+sizeParam.sizevalid} }],
+	labels = trainData.labels[{ {sizeParam.sizetr+1, sizeParam.sizetr+sizeParam.sizevalid} }]
 }
 testset = {
 	size = sizeParam.sizetest,
@@ -78,8 +79,8 @@ model:add(conv(192, 192, 1, 1, 1, 1)):add(relu(true))
 model:add(conv(192, 10, 1, 1, 1, 1)):add(relu(true))
 model:add(avgpool(7, 7))	-- tensor dimension after avgpl(7,7): 10x1x1
 model:add(nn.View(10*1*1))
---model:add(nn.LogSoftMax())
-model:add(nn.SoftMax())  -- prob
+model:add(nn.LogSoftMax())
+--model:add(nn.SoftMax())  -- prob
 criterion = nn.ClassNLLCriterion()
 
 if optParam.cuda then
@@ -194,6 +195,7 @@ last_acc_valid = 0
 decreasing = 0
 threshold = 2
 
+model:training()
 for i = 1, optParam.maxIter do
 	print(string.format('Epoch %d,', i))
 	local loss = step(optParam.batchsize)
