@@ -23,7 +23,7 @@ cifar/
 
 local M = {}
 
-function M.load_cifar_10()
+local function _load_cifar_10()
     local train_data = {
         data = torch.DoubleTensor(50000, 3, 32, 32),
         labels = torch.DoubleTensor(50000)
@@ -49,10 +49,14 @@ function M.load_cifar_10()
     test_data.data[{{}}] = test_batch.data:reshape(10000, 3, 32, 32)
     test_data.labels[{{}}] = test_batch.labels + 1
 
-    return {train=train_data, test=test_data, mean=torch.mean(train_data.data, 1)}
+    mean = torch.mean(train_data.data, 1)
+    train_data.data:add(-mean:repeatTensor(50000, 1, 1, 1))
+    test_data.data:add(-mean:repeatTensor(10000, 1, 1, 1))
+
+    return {train=train_data, test=test_data}
 end
 
-function M.load_cifar_100()
+local function _load_cifar_100()
     local train_data = {
         data = torch.DoubleTensor(50000, 3, 32, 32),
         labels = torch.DoubleTensor(50000)
@@ -78,7 +82,19 @@ function M.load_cifar_100()
     test_data.data[{{}}] = test_batch.data:reshape(10000, 3, 32, 32)
     test_data.labels[{{}}] = test_batch.fine_labels + 1
 
-    return {train=train_data, test=test_data, mean=torch.mean(train_data.data, 1)}
+    mean = torch.mean(train_data.data, 1)
+    train_data.data:add(-mean:repeatTensor(50000, 1, 1, 1))
+    test_data.data:add(-mean:repeatTensor(10000, 1, 1, 1))
+
+    return {train=train_data, test=test_data}
+end
+
+function M.load(nclass)
+    if nclass == 10 then
+        return _load_cifar_10()
+    else
+        return _load_cifar_100()
+    end
 end
 
 return M
