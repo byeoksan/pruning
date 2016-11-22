@@ -12,6 +12,10 @@ local norm = nn.SpatialCrossMapLRN
 local view = nn.View
 local linear = nn.Linear
 
+--[[
+fdjkalfjakel
+--]]
+
 ------------------- Generator functions -------------------
 local function _caffe(nclass)
     -- Refer to https://github.com/BVLC/caffe/blob/master/examples/cifar10/cifar10_full.prototxt
