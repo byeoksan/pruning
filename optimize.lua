@@ -26,8 +26,9 @@ config = {
 }
 
 sgd_config = {
-	learningRate = 1e-2,
-	--weightDecay = 1e-3
+	learningRate = 0.001,
+	weightDecay = 0.004,
+    momentum = 0.9,
 }
 
 ------------------- Data -------------------
