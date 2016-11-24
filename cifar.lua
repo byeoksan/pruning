@@ -49,9 +49,13 @@ local function _load_cifar_10()
     test_data.data[{{}}] = test_batch.data:reshape(10000, 3, 32, 32)
     test_data.labels[{{}}] = test_batch.labels + 1
 
-    mean = torch.mean(train_data.data, 1)
-    train_data.data:add(-mean:repeatTensor(50000, 1, 1, 1))
-    test_data.data:add(-mean:repeatTensor(10000, 1, 1, 1))
+    mean = torch.mean(train_data.data, 1):squeeze()
+    for i = 1, 50000 do
+        train_data.data[i]:csub(mean)
+    end
+    for i = 1, 10000 do
+        test_data.data[i]:csub(mean)
+    end
 
     return {train=train_data, test=test_data}
 end
@@ -82,9 +86,13 @@ local function _load_cifar_100()
     test_data.data[{{}}] = test_batch.data:reshape(10000, 3, 32, 32)
     test_data.labels[{{}}] = test_batch.fine_labels + 1
 
-    mean = torch.mean(train_data.data, 1)
-    train_data.data:add(-mean:repeatTensor(50000, 1, 1, 1))
-    test_data.data:add(-mean:repeatTensor(10000, 1, 1, 1))
+    mean = torch.mean(train_data.data, 1):squeeze()
+    for i = 1, 50000 do
+        train_data.data[i]:csub(mean)
+    end
+    for i = 1, 10000 do
+        test_data.data[i]:csub(mean)
+    end
 
     return {train=train_data, test=test_data}
 end
