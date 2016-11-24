@@ -31,6 +31,8 @@ sgd_config = {
     momentum = 0.9,
 }
 
+config.name = string.format('%s_model', config.model_type)
+
 ------------------- Data -------------------
 io.write(string.format('Loading cifar-%d data...', config.nclass))
 io.flush()
@@ -163,3 +165,5 @@ io.write('Memory Usage:', tostring(optnet.countUsedMemory(model)), '\n')
 io.write('Test result:\n')
 local acc_test = evaluation(test_set)
 io.write(string.format('Test Accuracy: %.8f\n', acc_test*100))
+io.write(string.format('Save the model into %s.t7', config.name))
+torch.save(string.format('%s.t7', config.name), model)
