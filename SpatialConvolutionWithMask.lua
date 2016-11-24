@@ -36,12 +36,14 @@ function SpatialConvolutionWithMask:reset(stdv)
 end
 
 function SpatialConvolutionWithMask:weightMaskSet(threshold)
-    self.weightMask:cmul(self.weight:ge(threshold))
+    self.weightMask:cmul(self.weight:ge(threshold):double())
+    self:applyWeightMask()
 end
 
 function SpatialConvolutionWithMask:biasMaskSet(threshold)
     if self.bias then
-        self.biasMask:cmul(self.bias:ge(threshold))
+        self.biasMask:cmul(self.bias:ge(threshold):double())
+        self:applyBiasMask()
     end
 end
 
@@ -52,6 +54,30 @@ end
 function SpatialConvolutionWithMask:applyBiasMask()
     if self.bias then
         self.bias:cmul(self.biasMask)
+    end
+end
+
+function SpatialConvolutionWithMask:prune(qfactor)
+    local alive_weights = self.weight[self.weightMask:eq(1)]
+    if self.bias then
+        local alive_bias = self.bias[self.biasMask:eq(1)]
+        if alive_bias:dim() > 0 then
+            alive_weights = alive_weights:cat(alive_bias)
+        end
+    end
+
+    local mean = alive_weights:mean()
+    local std = alive_weights:std()
+    local threshold = torch.abs(qfactor) * std
+
+    local new_weight_mask = torch.abs(self.weight - mean):ge(threshold)
+    self.weightMask[new_weight_mask:eq(0)] = 0
+    self:applyWeightMask()
+
+    if self.bias then
+        local new_bias_mask = torch.abs(self.bias - mean):ge(threshold)
+        self.biasMask[new_bias_mask:eq(0)] = 0
+        self:applyBiasMask()
     end
 end
 
@@ -67,3 +93,6 @@ function SpatialConvolutionWithMask:accGradParameters(input, gradOutput, scale)
     parent.accGradParameters(self, input, gradOutput, scale)
     self.gradWeight:cmul(self.weightMask)
 end
+
+
+

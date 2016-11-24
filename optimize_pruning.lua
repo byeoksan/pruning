@@ -184,7 +184,6 @@ for i = 1, config.epochsPre do
 
 	-- plot weight distribution every epoch
 	local wTemp, _ = model:parameters()
-	print(plotWeight(wTemp, 1, 'pre'))
 	wTemp = nil
 end
 
