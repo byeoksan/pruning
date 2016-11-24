@@ -1,39 +1,62 @@
 #!/usr/bin/env th
 
 require 'nn'
+require 'layers.SpatialConvolutionWithMask'
+require 'layers.LinearWithMask'
 
 local M = {}
 
-local conv = nn.SpatialConvolution
+--local conv = nn.SpatialConvolution
+local conv = SpatialConvolutionWithMask
 local maxpool = nn.SpatialMaxPooling
 local avgpool = nn.SpatialAveragePooling
 local relu = nn.ReLU
 local norm = nn.SpatialCrossMapLRN
 local view = nn.View
-local linear = nn.Linear
+--local linear = nn.Linear
+local linear = LinearWithMask
 
 ------------------- Generator functions -------------------
 local function _caffe(nclass)
     -- Refer to https://github.com/BVLC/caffe/blob/master/examples/cifar10/cifar10_full.prototxt
     model = nn.Sequential()
     model:add(view(-1, 3, 32, 32))
-    model:add(conv(3, 32, 5, 5, 1, 1, 2, 2)) -- conv1
-    model:add(maxpool(3, 3, 2, 2):ceil()) -- pool1
-    model:add(relu(true)) -- relu1
-    model:add(norm(3, 5e-05, 0.75)) -- norm1
 
-    model:add(conv(32, 32, 5, 5, 1, 1, 2, 2)) -- conv2
-    model:add(relu(true)) -- relu2
-    model:add(avgpool(3, 3, 2, 2):ceil()) -- pool2
-    model:add(norm(3, 5e-05, 0.75)) -- norm2
+    conv1 = conv(3, 32, 5, 5, 1, 1, 2, 2)
+    conv1:reset(0.0001)
+    pool1 = maxpool(3, 3, 2, 2):ceil()
+    relu1 = relu(true)
+    norm1 = norm(3, 5e-05, 0.75)
 
-    model:add(conv(32, 64, 5, 5, 1, 1, 2, 2)) -- conv3
-    model:add(relu(true)) -- relu3
-    model:add(avgpool(3, 3, 2, 2):ceil()) -- pool3
+    conv2 = conv(32, 32, 5, 5, 1, 1, 2, 2)
+    conv2:reset(0.01)
+    relu2 = relu(true)
+    pool2 = avgpool(3, 3, 2, 2):ceil()
+    norm2 = norm(3, 5e-05, 0.75)
 
-    -- ip1
+    conv3 = conv(32, 64, 5, 5, 1, 1, 2, 2)
+    conv3:reset(0.01)
+    relu3 = relu(true)
+    pool3 = avgpool(3, 3, 2, 2):ceil()
+
+    model:add(conv1)
+    model:add(pool1)
+    model:add(relu1)
+    model:add(norm1)
+
+    model:add(conv2)
+    model:add(relu2)
+    model:add(pool2)
+    model:add(norm2)
+
+    model:add(conv3)
+    model:add(relu3)
+    model:add(pool3)
+
     model:add(view(64*4*4))
-    model:add(linear(64*4*4, nclass))
+    ip1 = linear(64*4*4, nclass)
+    ip1:reset(0.01)
+    model:add(ip1)
 
     return model
 end
