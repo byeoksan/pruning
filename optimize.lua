@@ -13,15 +13,15 @@ optnet = require('optnet')
 
 config = {
     -- Training configuration
-    batch_size = 5000,
-    epochs = 50,
+    batch_size = 128,
+    epochs = 200,
     cuda = true,
     model_type = 'caffe',
 
     -- Data configuration
     nclass = 10,
-    train_cnt = 40000,
-    validate_cnt = 10000,
+    train_cnt = 50000,
+    validate_cnt = 0,
     test_cnt = 10000
 }
 
@@ -41,10 +41,12 @@ train_set = {
     labels = train_data.labels[{{1, config.train_cnt}}]
 }
 
+--[[
 validate_set = {
     data = train_data.data[{{config.train_cnt+1, config.train_cnt+config.validate_cnt}}],
     labels = train_data.labels[{{config.train_cnt+1, config.train_cnt+config.validate_cnt}}]
 }
+--]]
 
 test_set = {
     data = test_data.data[{{1, config.test_cnt}}],
@@ -66,8 +68,8 @@ if config.cuda then
 	criterion:cuda()
 	train_set.data = train_set.data:cuda()
 	train_set.labels = train_set.labels:cuda()
-	validate_set.data = validate_set.data:cuda()
-	validate_set.labels = validate_set.labels:cuda()
+	--validate_set.data = validate_set.data:cuda()
+	--validate_set.labels = validate_set.labels:cuda()
 	test_set.data = test_set.data:cuda()
 	test_set.labels = test_set.labels:cuda()
 end
@@ -148,12 +150,12 @@ for i = 1, config.epochs do
 	io.write(string.format('\t         Train loss: %.8f\n', loss))
 	local acc_train = evaluation(train_set)
 	io.write(string.format('\t     Train Accuracy: %.8f\n', acc_train*100))
-	local acc_valid = evaluation(validate_set)
-	io.write(string.format('\tValidation Accuracy: %.8f\n', acc_valid*100))
+	--local acc_valid = evaluation(validate_set)
+	--io.write(string.format('\tValidation Accuracy: %.8f\n', acc_valid*100))
 	
 	table.insert(loss_table_train, loss)
 	table.insert(acc_table_train, acc_train*100)
-	table.insert(acc_table_valid, acc_valid*100)
+	--table.insert(acc_table_valid, acc_valid*100)
 end
 
 io.write('Memory Usage:', tostring(optnet.countUsedMemory(model)), '\n')
