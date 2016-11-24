@@ -36,12 +36,14 @@ function SpatialConvolutionWithMask:reset(stdv)
 end
 
 function SpatialConvolutionWithMask:weightMaskSet(threshold)
-    self.weightMask:cmul(self.weight:ge(threshold))
+    self.weightMask:cmul(self.weight:ge(threshold):double())
+    self:applyWeightMask()
 end
 
 function SpatialConvolutionWithMask:biasMaskSet(threshold)
     if self.bias then
-        self.biasMask:cmul(self.bias:ge(threshold))
+        self.biasMask:cmul(self.bias:ge(threshold):double())
+        self:applyBiasMask()
     end
 end
 
