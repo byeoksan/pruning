@@ -4,6 +4,7 @@ require 'torch'
 require 'nn'
 require 'optim'
 require 'gnuplot'
+require 'SpatialConvolutionWithMask'
 
 models = require('models')
 cifar = require('cifar')
@@ -15,7 +16,7 @@ config = {
     epochsPre = 50,				-- learning epochs before pruning(pretraining)
 	epochsPost = 100,			-- learning epochs after pruning(posttraining)
     cuda = false,
-    model_type = 'allcnn',
+    model_type = 'allcnnPruning',
 
     -- Data configuration
     nclass = 10,
@@ -140,16 +141,24 @@ function evaluation(data_set)
 end
 
 function plotWeight(w, numFigure, mode)
-	local w_acc = w[1]:view(w_temp[1]:nElement())
+	local w_acc = w[1]:view(w[1]:nElement())
 	for j = 2, #w do
 		w_acc = torch.cat(w_acc, w[j]:view(w[j]:nElement()), 1)
 	end
 	gnuplot.figure(numFigure)
 	gnuplot.xlabel('weights')
 	if mode == 'pre' then		gnuplot.title('Pre-training to learn connectivity')
-	else if mode == 'post' then	gnuplot.title('Post-training after pruning')
+	elseif mode == 'post' then	gnuplot.title('Post-training after pruning')
 	end
-	gnuplot.hist(w, 1000)
+	gnuplot.hist(w_acc, 1000)
+end
+
+function stdWeight(w)
+	local w_acc = w[1]:view(w[1]:nElement())
+	for j = 2, #w do
+		w_acc = torch.cat(w_acc, w[j]:view(w[j]:nElement()), 1)
+	end
+	return w_acc:std()
 end
 
 io.write('Now train...\n')
@@ -172,13 +181,25 @@ for i = 1, config.epochsPre do
 	table.insert(loss_table_train, loss)
 	table.insert(acc_table_train, acc_train*100)
 	table.insert(acc_table_valid, acc_valid*100)
+
+	-- plot weight distribution every epoch
+	local wTemp, _ = model:parameters()
+	print(plotWeight(wTemp, 1, 'pre'))
+	wTemp = nil
 end
 
+--[[
+-- plot weight distribution after pretraining
 local wTemp, _ = model:parameters()
 plotWeight(wTemp, 1, 'pre')
 wTemp = nil
+]]--
 
 -- pruning
+wTemp, _ = model:parameters()
+local wStd = stdWeight(wTemp)
+wTemp = nil
+local qParam = 0.7 -- quality parameter
 
 
 -- post-training 

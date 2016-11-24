@@ -1,6 +1,8 @@
 #!/usr/bin/env th
 
+
 require 'nn'
+require 'SpatialConvolutionWithMask'
 
 local M = {}
 
@@ -11,6 +13,8 @@ local relu = nn.ReLU
 local norm = nn.SpatialCrossMapLRN
 local view = nn.View
 local linear = nn.Linear
+local convPruning = SpatialConvolutionWithMask
+local LinearWithMask = nn.LinearWithMask
 
 ------------------- Generator functions -------------------
 local function _caffe(nclass)
@@ -74,9 +78,46 @@ local function _allcnn(nclass)
     return model
 end
 
+local function _allcnnPruning(nclass)
+    model = nn.Sequential()
+    model:add(view(-1, 3, 32, 32))
+    model:add(convPruning(3, 96, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+
+    model:add(convPruning(96, 96, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+
+    model:add(convPruning(96, 96, 3, 3, 2, 2))
+    model:add(relu(true))
+
+    model:add(convPruning(96, 192, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+
+    model:add(convPruning(192, 192, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+
+    model:add(convPruning(192, 192, 3, 3, 2, 2))
+    model:add(relu(true))
+
+    model:add(convPruning(192, 192, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+
+    model:add(convPruning(192, 192, 1, 1, 1, 1))
+    model:add(relu(true))
+
+    model:add(convPruning(192, 10, 1, 1, 1, 1))
+    model:add(relu(true))
+
+    model:add(avgpool(7, 7))
+    model:add(view(10*1*1))
+
+    return model
+end
+
 local model_generator = {
     caffe = _caffe,
     allcnn = _allcnn,
+	allcnnPruning = _allcnnPruning,
 }
 
 function M.load(name, nclass)
