@@ -57,7 +57,7 @@ local function get_data_set_size(data_set)
 end
 
 ------------------- Model -------------------
-model = models.load(config.model_type, 10)
+model = models.load(config.model_type, config.nclass)
 model:add(nn.LogSoftMax())
 criterion = nn.ClassNLLCriterion()
 
