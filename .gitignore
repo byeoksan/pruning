@@ -2,3 +2,4 @@
 .optimize.lua.swp
 .optimize_pruning.lua.swp
 cifar-10-torch.tar.gz
+.models.lua.swp

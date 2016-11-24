@@ -1,11 +1,9 @@
 #!/usr/bin/env th
 
-
 require 'torch'
-require 'cutorch'
 require 'nn'
-require 'cunn'
 require 'optim'
+require 'gnuplot'
 
 models = require('models')
 cifar = require('cifar')
@@ -13,16 +11,16 @@ optnet = require('optnet')
 
 config = {
     -- Training configuration
-    batch_size = 5000,
+    batch_size = 50,
     epochs = 50,
-    cuda = true,
-    model_type = 'caffe',
+    cuda = false,
+    model_type = 'allcnn',
 
     -- Data configuration
     nclass = 10,
-    train_cnt = 40000,
-    validate_cnt = 10000,
-    test_cnt = 10000
+    train_cnt = 300,
+    validate_cnt = 50,
+    test_cnt = 50
 }
 
 sgd_config = {
@@ -62,6 +60,8 @@ model:add(nn.LogSoftMax())
 criterion = nn.ClassNLLCriterion()
 
 if config.cuda then
+	require 'cunn'
+	require 'cutorch'
 	model:cuda()
 	criterion:cuda()
 	train_set.data = train_set.data:cuda()
@@ -116,6 +116,7 @@ function evaluation(data_set)
 	local cnt_correct = 0
     local data_set_size = get_data_set_size(data_set)
 
+	model:evaluate()
 	for i = 1, data_set_size, config.batch_size do
 		local size = math.min(i + config.batch_size - 1, data_set_size) - i + 1
 		local inputs = data_set.data[{{i,i+size-1}}]
@@ -128,8 +129,9 @@ function evaluation(data_set)
 
 		local outputs = model:forward(inputs)
 		local _, indices = torch.max(outputs, 2)
-		local cnt_right = indices:eq(targets):sum()
-	
+		--local cnt_right = indices:eq(targets):sum()	-- use this one with cuda
+		local cnt_right = indices:eq(targets:long()):sum()	-- use this one w/o cuda
+
 		cnt_correct = cnt_correct + cnt_right
 	end
 
@@ -151,12 +153,44 @@ for i = 1, config.epochs do
 	local acc_valid = evaluation(validate_set)
 	io.write(string.format('\tValidation Accuracy: %.8f\n', acc_valid*100))
 	
+	gnuplot.figure(1)
+	gnuplot.xlabel('weight')
+	gnuplot.title('Weight Distirubtion')
+
 	table.insert(loss_table_train, loss)
 	table.insert(acc_table_train, acc_train*100)
 	table.insert(acc_table_valid, acc_valid*100)
+
+	-- Plot weight distribution
+	local w_temp, _ = model:parameters()
+	local w_acc = w_temp[1]:view(w_temp[1]:nElement())
+	for j = 2, #w_temp do
+		w_acc = torch.cat(w_acc, w_temp[j]:view(w_temp[j]:nElement()), 1)
+	end
+	w_temp = nil  -- necessary because of out of memory issue
+
+	-- Find nonzero weights
+	local epsilon = 1e-2*5
+	local cnt = 0
+	local w_nz = {}
+	for j = 1, w_acc:size(1) do
+		--if j%1000 == 0 then print(w_acc[j]) end
+		if w_acc[j] > epsilon or w_acc[j] < -epsilon then
+			w_nz[#w_nz+1] = w_acc[j]
+		end
+	end
+	w_acc = nil
+	w_nz = torch.Tensor(w_nz)
+	print(w_nz:size())
+	print(w_nz:std())
+	gnuplot.figure(1)
+	gnuplot.xlabel('weights')
+	gnuplot.hist(w_nz, 1000)
 end
 
 io.write('Memory Usage:', tostring(optnet.countUsedMemory(model)), '\n')
 io.write('Test result:\n')
 local acc_test = evaluation(test_set)
 io.write(string.format('Test Accuracy: %.8f\n', acc_test*100))
+
+
