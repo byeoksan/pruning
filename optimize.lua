@@ -6,6 +6,7 @@ require 'cutorch'
 require 'nn'
 require 'cunn'
 require 'optim'
+require 'xlua'
 
 models = require('models')
 cifar = require('cifar')
@@ -13,8 +14,9 @@ optnet = require('optnet')
 
 config = {
     -- Training configuration
-    batch_size = 128,
-    epochs = 200,
+    train_batch_size = 128,
+    test_batch_size = 128 * 5,
+    epochs = 10,
     cuda = true,
     model_type = 'caffe',
 
@@ -26,8 +28,9 @@ config = {
 }
 
 sgd_config = {
-	learningRate = 0.001,
-	weightDecay = 0.004,
+	learningRate = 0.01,
+    learningRateDecay = 1e-4,
+	weightDecay = 0.0005,
     momentum = 0.9,
 }
 
@@ -83,12 +86,14 @@ io.write('Network to train:\n', tostring(model), '\n')
 io.write('Memory Usage:\n', tostring(optnet.countUsedMemory(model)), '\n')
 
 function step()
+    model:training()
 	local loss_cur = 0
 	local cnt = 0
 	local shuffle = torch.randperm(config.train_cnt)
 
-	for t = 1, config.train_cnt, config.batch_size do
-		local size = math.min(t + config.batch_size - 1, config.train_cnt) - t + 1
+	for t = 1, config.train_cnt, config.train_batch_size do
+		xlua.progress(t, config.train_cnt)
+		local size = math.min(t + config.train_batch_size - 1, config.train_cnt) - t + 1
 		local inputs = torch.DoubleTensor(size, 3, 32, 32)
 		local targets = torch.DoubleTensor(size)
 
@@ -118,11 +123,13 @@ function step()
 end
 
 function evaluation(data_set)
+    model:evaluate()
 	local cnt_correct = 0
     local data_set_size = get_data_set_size(data_set)
 
-	for i = 1, data_set_size, config.batch_size do
-		local size = math.min(i + config.batch_size - 1, data_set_size) - i + 1
+	for i = 1, data_set_size, config.test_batch_size do
+        xlua.progress(i, data_set_size)
+		local size = math.min(i + config.test_batch_size - 1, data_set_size) - i + 1
 		local inputs = data_set.data[{{i,i+size-1}}]
 		local targets = data_set.labels[{{i,i+size-1}}]
 
@@ -146,7 +153,6 @@ local loss_table_train = {}
 local acc_table_train = {}
 local acc_table_valid = {}
 
-model:training()
 for i = 1, config.epochs do
 	io.write(string.format('Epoch %d\n', i))
 	local loss = step()
