@@ -12,11 +12,9 @@ WeightPretrain = load(fileWeightPretrain);
 WeightRetrain = load(fileWeightRetrain);
 AccLoss = load(fileAccLoss);
 
-fprintf('Pretraining Testset Accuracy: %0.3f\n', AccLoss.AccTestPretrain)
-
 %% Pretraining plots
 % Accuracy Plot
-fprintf('*Pretraining Plots\n')
+fprintf('* Pretraining Plots\n\n')
 figure(1)
 subplot(2,1,1)
 plot(AccLoss.LossPretrain)
@@ -25,8 +23,8 @@ ylabel('Loss')
 title('Loss on Pretraining phase')
 
 subplot(2,1,2)
-plot(1:size(AccLoss.AccTrainPretrain,1), AccLoss.AccTrainPretrain, 'r', ...
-        1:size(AccLoss.AccTrainPretrain,1), AccLoss.AccValidPretrain, 'b')
+plot(0:size(AccLoss.AccTrainPretrain,1)-1, AccLoss.AccTrainPretrain, 'r', ...
+        0:size(AccLoss.AccTrainPretrain,1)-1, AccLoss.AccValidPretrain, 'b')
 xlabel('epoch')
 ylabel('Accuracy(%)')
 legend('Train Set', 'Validation Set')
@@ -72,10 +70,10 @@ hist(WeightPretrain.Fc3, binFc(3))
 xlabel('weight')
 title('Fully-connected Layer 3')
 fprintf('  # of weights in Fc3 = %d\n', numPreFc3)
-
+fprintf('  Pretraining Testset Accuracy: %0.3f\n', AccLoss.AccTestPretrain)
 
 %% Retraining plots
-fprintf('\n*Retraining Plots\n')
+fprintf('\n* Retraining Plots\n\n')
 % Accuracy Plot
 numReConv1 = size(WeightRetrain.Conv1,1);
 numReConv2 = size(WeightRetrain.Conv2,1);
@@ -91,8 +89,8 @@ ylabel('Loss')
 title('Loss on Retraining phase')
 
 subplot(2,1,2)
-plot(1:size(AccLoss.AccTrainPretrain,1), AccLoss.AccTrainPretrain, 'r', ...
-        1:size(AccLoss.AccTrainPretrain,1), AccLoss.AccValidPretrain, 'b')
+plot(0:size(AccLoss.AccTrainRetrain,1)-1, AccLoss.AccTrainRetrain, 'r', ...
+        0:size(AccLoss.AccTrainRetrain,1)-1, AccLoss.AccValidRetrain, 'b')
 xlabel('epoch')
 ylabel('Accuracy(%)')
 legend('Train Set', 'Validation Set')
@@ -132,3 +130,4 @@ hist(WeightRetrain.Fc3, binFc(3))
 xlabel('weight')
 title('Fully-connected Layer 3')
 fprintf('  # of weights in Fc3 = %d\n', numReFc3)
+fprintf('  Retraining Testset Accuracy: %0.3f\n', AccLoss.AccTestRetrain)
