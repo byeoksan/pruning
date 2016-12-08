@@ -6,7 +6,9 @@ require 'torch'
 require 'nn'
 require 'optim'
 require 'cutorch'
-require 'gnuplot'
+require 'LinearWithMask'
+require 'SpatialConvolutionWithMask'
+require 'xlua'
 local mnist = require 'mnist'
 local optnet = require 'optnet'
 local matio = require 'matio'
@@ -23,8 +25,9 @@ cmd:option('-seed',				1,			'fixed input seed for repeatable experiments')
 cmd:option('-learning_rate',	1e-2*10,	'learning rate at t=0')
 cmd:option('-momentum',			0.6,		'momentum')
 cmd:option('-weight_decay',		1e-3,		'weight decay')
-cmd:option('-batch_size',		75,			'mini-batch size (1 = pure stochastic)')
-cmd:option('-maxiter',			30,		'Maximum iteration number')
+cmd:option('-batchsize',		200,		'mini-batch size (1 = pure stochastic)')
+cmd:option('-iterPretrain',		30,			'Maximum iteration number for Pretraining')
+cmd:option('-iterRetrain',		50,			'Maximum iteration number for Retraining')
 cmd:text()
 
 print("\n... learning setup")
@@ -57,6 +60,15 @@ local optim_state = {
 }
 local optim_method = optim.sgd
 
+local filename = {
+	WeightPretrain = string.format(tostring(opt.model)..'WeightPretrain.mat'),
+	WeightPruned = string.format(tostring(opt.model)..'WeightPruned.mat'),
+	WeightRetrain = string.format(tostring(opt.model)..'WeightRetrained.mat'),
+	ModelPretrain = string.format(tostring(opt.model)..'ModelPretrain.t7'),
+	ModelRetrain = string.format(tostring(opt.model)..'ModelRetrain.t7'),
+	AccLoss = string.format(tostring(opt.model)..'AccLoss.mat')
+}
+
 ------------------------------------------------------------------------
 -- Defining DNN model
 ------------------------------------------------------------------------
@@ -64,19 +76,24 @@ model = nn.Sequential()
 
 if opt.model == 'lenet' then					-- LeNet-5
 	model:add(nn.View(1,28,28))
-	model:add(nn.SpatialConvolution(1,6,5,5))	-- (1x28x28) goes in, (6x24x24) goes out -- Conv1
+	--model:add(nn.SpatialConvolution(1,6,5,5))	-- (1x28x28) goes in, (6x24x24) goes out -- Conv1
+	model:add(SpatialConvolutionWithMask(1,6,5,5))	-- (1x28x28) goes in, (6x24x24) goes out -- Conv1
 	model:add(nn.SpatialMaxPooling(2,2,2,2)) 	-- (6x24x24) goes out, (6x12x12) goes out
 	model:add(nn.ReLU())
-	model:add(nn.SpatialConvolution(6,16,3,3))	-- (6x12x12) goes in, (16x10x10) goes out -- Conv2
+	--model:add(nn.SpatialConvolution(6,16,3,3))	-- (6x12x12) goes in, (16x10x10) goes out -- Conv2
+	model:add(SpatialConvolutionWithMask(6,16,3,3))	-- (6x12x12) goes in, (16x10x10) goes out -- Conv2
 	model:add(nn.SpatialMaxPooling(2,2,2,2))	-- (16x10x10) goes in, (16x5x5) goes out
 	model:add(nn.ReLU())
 	model:add(nn.View(16*5*5))
-	model:add(nn.Linear(16*5*5, 120))
+	--model:add(nn.Linear(16*5*5, 120))
+	model:add(LinearWithMask(16*5*5, 120))
 	model:add(nn.ReLU())
-	model:add(nn.Linear(120,84))
+	--model:add(nn.Linear(120,84))
+	model:add(LinearWithMask(120,84))
 	model:add(nn.ReLU())
-	model:add(nn.Linear(84,10))
-	model:add(nn.SoftMax())
+	--model:add(nn.Linear(84,10))
+	model:add(LinearWithMask(84,10))
+	model:add(nn.LogSoftMax())
 else
 	model:add(nn.View(1,28,28))
 	model:add(nn.SpatialConvolution(1,6,5,5))	-- (1x28x28) goes in, (6x24x24) goes out -- Conv1
@@ -86,12 +103,6 @@ else
 	model:add(nn.SpatialMaxPooling(2,2,2,2))	-- (3x10x10) goes in, (3x5x5) goes out
 	model:add(nn.ReLU())
 	model:add(nn.View(3*5*5))
-
-	--[[
-	if opt.dropout then
-		print('* dropout added')
-		model:add(nn.Dropout(opt.dropout_p))
-	end]]--
 
 	model:add(nn.Dropout(opt.dropout_p))
 	model:add(nn.Linear(3*5*5, 30))
@@ -156,25 +167,10 @@ if opt.type == 'cuda' then
 	print('\n... put data into gpu')
 	trainset.data = trainset.data:cuda()
 	trainset.label = trainset.label:cuda()
-	memoryUse()
-
 	validationset.data = validationset.data:cuda()
 	validationset.label = validationset.label:cuda()
-	memoryUse()
-
 	testset.data = testset.data:cuda()
 	testset.label = testset.label:cuda()
-	memoryUse()
-end
-
-
--- Test model
-if opt.print_layers_op then
-	local o = inputs
-	for i = 1, #(model.modules) do
-		o = model.modules[i]:forward(o)
-		print(#o)
-	end
 end
 
 
@@ -189,6 +185,7 @@ function step(batch_size)
 
 	model:training()
 	for t = 1, sizeparam.tr, batch_size do
+		xlua.progress(t, sizeparam.tr)
 		local size = math.min(t + batch_size - 1, sizeparam.tr) - t
 		local inputs = torch.Tensor(size, 1, 28, 28)
 		local targets = torch.Tensor(size)
@@ -230,6 +227,7 @@ function evaluation(dataset, batch_size)
 	
 	model:evaluate()
 	for i = 1, dataset.size, batch_size do
+		xlua.progress(i, dataset.size)
 		local size = math.min(i + batch_size, dataset.size) - i
 		local inputs = dataset.data[{ {i, i+size} }]
 		local targets = dataset.label[{ {i, i+size} }]
@@ -245,39 +243,35 @@ function evaluation(dataset, batch_size)
 	return cnt_correct / dataset.size
 end
 
---------
--- Train
---------
-print('\n... training')
 
-local loss_table_train = {}
-local acc_table_train = {}
-local acc_table_valid = {}
+-------------------------------
+-- PreTrain
+-------------------------------
+print('\n------------------------------------------------')
+print('\n>> Pretraining Phase')
+local LossTablePretrain = {}
+local AccTableTrainPretrain = {}
+local AccTableValidPretrain = {}
 
 last_acc_valid = 0
 decreasing = 0
 threshold = 2
 
-filename_wmat = string.format(tostring(opt.model)..'_r_%s_w.mat', tostring(opt.learning_rate))
-filename_torch = string.format(tostring(opt.model)..'_r_%s.t7', tostring(opt.learning_rate))
-filename_mat = string.format(tostring(opt.model)..'_r_%s.mat', tostring(opt.learning_rate))
-filename_wmat = string.format(tostring(opt.model)..'_r_%s_w.mat', tostring(opt.learning_rate))
-
-local timetotal = 0
-for i = 1, opt.maxiter do
+local timePretrain = 0
+for i = 1, opt.iterPretrain do
 	local time = sys.clock()
 	local loss = step(opt.batch_size)
-	print(string.format('Epoch %d,', i))
-	print(string.format('	Train loss		: %.8f', loss))
 	local acc_train = evaluation(trainset, opt.batch_size)
-	print(string.format('	Train Accuracy		: %.8f', acc_train*100))
 	local acc_valid = evaluation(validationset, opt.batch_size)
+	print(string.format('\nEpoch %d,', i))
+	print(string.format('	Train loss		: %.8f', loss))
+	print(string.format('	Train Accuracy		: %.8f', acc_train*100))
 	print(string.format('	Validation Accuracy	: %.8f', acc_valid*100))
 	memoryUse()
 
-	table.insert(loss_table_train, loss)
-	table.insert(acc_table_train, acc_train*100)
-	table.insert(acc_table_valid, acc_valid*100)
+	table.insert(LossTablePretrain, loss)
+	table.insert(AccTableTrainPretrain, acc_train*100)
+	table.insert(AccTableValidPretrain, acc_valid*100)
 	
 	if acc_valid < last_acc_valid then
 		if decreasing > threshold then
@@ -290,50 +284,153 @@ for i = 1, opt.maxiter do
 	end
 	last_acc_valid = acc_valid
 
-	weight, _ = model:parameters()
+	time = sys.clock() - time
+	timePretrain = timePretrain + time
+	print('... time consumed at epoch ' .. i ..' = ' .. (time) .. 's')
+end
 
-	-- convert cudatensor to double tensor to save it in .mat format
-	if opt.model == 'lenet' then
-		conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
-		conv2 = torch.cat(weight[3]:view(16*6*3*3), weight[4], 1):double()
-		fc1 = torch.cat(weight[5]:view(120*400), weight[6], 1):double()
-		fc2 = torch.cat(weight[7]:view(84*120), weight[8], 1):double()
-		fc3 = torch.cat(weight[9]:view(10*84), weight[10], 1):double()
+weight, _ = model:parameters()
+-- convert cudatensor to double tensor to save it in .mat format
+if opt.model == 'lenet' then
+	conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
+	conv2 = torch.cat(weight[3]:view(16*6*3*3), weight[4], 1):double()
+	fc1 = torch.cat(weight[5]:view(120*400), weight[6], 1):double()
+	fc2 = torch.cat(weight[7]:view(84*120), weight[8], 1):double()
+	fc3 = torch.cat(weight[9]:view(10*84), weight[10], 1):double()
+else
+	conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
+	conv2 = torch.cat(weight[3]:view(3*6*3*3), weight[4], 1):double()
+	fc1 = torch.cat(weight[5]:view(30*75), weight[6], 1):double()
+	fc2 = torch.cat(weight[7]:view(10*30), weight[8], 1):double()
+end
 
+-- Save pretraining data
+matio.save(filename.WeightPretrain, {Conv1 = conv1, Conv2 = conv2, Fc1 = fc1, Fc2 = fc2, Fc3 = fc3})
+torch.save(filename.ModelPretrain, model)
+
+print('... time consumed for Pretraining = ' .. (timePretrain) .. 's')
+print("... counting memory after Pretraining")
+print(optnet.countUsedMemory(model))
+print('\n>> Pretraining Phase, Evaluation')
+local AccTestPretrain = evaluation(testset)
+print(string.format('\n		Test Accuracy after Pretraining	: %.4f', AccTestPretrain*100))
+
+
+
+-------------------------------
+-- Pruning
+-------------------------------
+print('\n------------------------------------------------')
+print('\n>> Pruning')
+ConvLayerSet = model:findModules('SpatialConvolutionWithMask')
+FcLayerSet = model:findModules('LinearWithMask')
+
+-- quality factor for pruning
+local qConv = {}	
+local qFc = {}
+
+-- Set thresholds and do pruning
+for i = 1, #ConvLayerSet do
+	qConv[#qConv+1] = 0.5
+	ConvLayerSet[i]:prune(qConv[i])
+end
+for i = 1, #FcLayerSet do
+	qFc[#qFc+1] = 0.5
+	FcLayerSet[i]:prune(qFc[i])
+end
+-- Save Pruned weights
+
+
+
+-------------------------------
+-- ReTraining
+-------------------------------
+print('\n------------------------------------------------')
+print('\n>> Retraining')
+local LossTableRetrain = {}
+local AccTableTrainRetrain = {}
+local AccTableValidRetrain = {}
+
+local timeRetrain = 0
+for i = 1, opt.iterPretrain do
+	local time = sys.clock()
+	local loss = step(opt.batch_size)
+	local acc_train = evaluation(trainset, opt.batch_size)
+	local acc_valid = evaluation(validationset, opt.batch_size)
+	print(string.format('\nEpoch %d,', i))
+	print(string.format('	Train loss		: %.8f', loss))
+	print(string.format('	Train Accuracy		: %.8f', acc_train*100))
+	print(string.format('	Validation Accuracy	: %.8f', acc_valid*100))
+	memoryUse()
+
+	table.insert(LossTableRetrain, loss)
+	table.insert(AccTableTrainRetrain, acc_train*100)
+	table.insert(AccTableValidRetrain, acc_valid*100)
+	
+	if acc_valid < last_acc_valid then
+		if decreasing > threshold then
+			print('... Early Stopping!!')
+			break 
+		end
+		decreasing = decreasing + 1
 	else
-		conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
-		conv2 = torch.cat(weight[3]:view(3*6*3*3), weight[4], 1):double()
-		fc1 = torch.cat(weight[5]:view(30*75), weight[6], 1):double()
-		fc2 = torch.cat(weight[7]:view(10.*30), weight[8], 1):double()
+		decreasing = 0
 	end
+	last_acc_valid = acc_valid
 
 	time = sys.clock() - time
-	timetotal = timetotal + time
-	print('time consumed at epoch ' .. i ..' = ' .. (time) .. 's\n')
+	timeRetrain = timeRetrain + time
+	print('... time consumed at epoch ' .. i ..' = ' .. (time) .. 's')
 end
-matio.save(filename_wmat, {w_conv1 = conv1,	w_conv2 = conv2, w_fc1 = fc1, w_fc2 = fc2, w_fc3 = fc3})
 
-print('time consumed for all = ' .. (timetotal) .. 's')
-print("\n... counting memory after training")
+
+weight, _ = model:parameters()
+-- convert cudatensor to double tensor to save it in .mat format
+if opt.model == 'lenet' then
+	conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
+	conv2 = torch.cat(weight[3]:view(16*6*3*3), weight[4], 1):double()
+	fc1 = torch.cat(weight[5]:view(120*400), weight[6], 1):double()
+	fc2 = torch.cat(weight[7]:view(84*120), weight[8], 1):double()
+	fc3 = torch.cat(weight[9]:view(10*84), weight[10], 1):double()
+else
+	conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
+	conv2 = torch.cat(weight[3]:view(3*6*3*3), weight[4], 1):double()
+	fc1 = torch.cat(weight[5]:view(30*75), weight[6], 1):double()
+	fc2 = torch.cat(weight[7]:view(10*30), weight[8], 1):double()
+end
+
+
+-- Save pretraining data
+matio.save(filename.WeightRetrain, {Conv1 = conv1, Conv2 = conv2, Fc1 = fc1, Fc2 = fc2, Fc3 = fc3})
+torch.save(filename.ModelRetrain, model)
+
+
+print('... time consumed for Retraining = ' .. (timeRetrain) .. 's')
+print("... counting memory after Pretraining")
 print(optnet.countUsedMemory(model))
-print("\n... Evaluation")
-local acc_test = evaluation(testset)
-print(string.format('	Test Accuracy		: %.8f', acc_test*100))
+print("... Evaluation after Pretraining")
+local AccTestRetrain = evaluation(testset)
+print(string.format('	Test Accuracy after Pretraining	: %.4f', AccTestRetrain*100))
+
 
 
 ------------------------------------------------------------------------
--- Savoing the model
+-- Saving the model
 ------------------------------------------------------------------------
 print('\n------------------------------------------------')
-print('5. Save the model in '..filename_torch)
-print('   Save the model in '..filename_mat)
-print('   Save the model in '..filename_wmat..'\n')
+print('>> Model, Weight, Accuracy, and Loss tensors are svaed.')
 
-torch.save(filename_torch, model)
-matio.save(filename_mat, {loss_train = torch.Tensor(loss_table_train),
-                            acc_train = torch.Tensor(acc_table_train),
-                            acc_valid = torch.Tensor(acc_table_valid),
-                            acc_test = acc_test*100
-                            })
+torch.save(filename.ModelRetrain, model)
+matio.save(filename.AccLoss, {
+								LossPretrain = torch.Tensor(LossTablePretrain),
+								AccTrainPretrain = torch.Tensor(AccTableTrainPretrain),
+								AccValidPretrain = torch.Tensor(AccTableValidPretrain),
+								AccTestPretrain = AccTestPretrain*100,
+
+								LossRetrain = torch.Tensor(LossTableRetrain),
+								AccTrainRetrain = torch.Tensor(AccTableTrainRetrain),
+								AccValidRetrain = torch.Tensor(AccTableValidRetrain),
+								AccTestRetrain = AccTestRetrain*100
+								})
 
 
