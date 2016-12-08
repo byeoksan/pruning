@@ -22,12 +22,13 @@ cmd:text('Options:')
 cmd:option('-type',				'cuda',		'type: float | cuda')
 cmd:option('-model',			'lenet',	'type: LeNet5 | defaultNet')
 cmd:option('-seed',				1,			'fixed input seed for repeatable experiments')
-cmd:option('-learning_rate',	1e-2*10,	'learning rate at t=0')
+cmd:option('-learningRatePre',	1e-1,		'learning for pretraining rate at t=0')
+cmd:option('-learningRateRe',	1e-2,		'learning for retraining rate at t=0')
 cmd:option('-momentum',			0.6,		'momentum')
 cmd:option('-weight_decay',		1e-3,		'weight decay')
 cmd:option('-batchsize',		200,		'mini-batch size (1 = pure stochastic)')
-cmd:option('-iterPretrain',		30,			'Maximum iteration number for Pretraining')
-cmd:option('-iterRetrain',		50,			'Maximum iteration number for Retraining')
+cmd:option('-iterPretrain',		15,			'Maximum iteration number for Pretraining')
+cmd:option('-iterRetrain',		20,			'Maximum iteration number for Retraining')
 cmd:text()
 
 print("\n... learning setup")
@@ -53,7 +54,7 @@ local batch_size = opt.batch_size
 
 memoryUse()
 local optim_state = {
-	learningRate = opt.learning_rate,
+	learningRate = opt.learningRatePre,
 	weightDecay = opt.weight_decay,
 	momentum = opt.momentum,
 	learningRateDecay = 5e-7
@@ -177,7 +178,7 @@ end
 -- Trainer
 -- Tensor variables for model params and gradient params
 local x, dl_dx = model:getParameters()
-function step(batch_size)
+function step(batch_size, phase)
 	local loss_cur = 0
 	local cnt = 0
 	local shuffle = torch.randperm(sizeparam.tr)
@@ -213,6 +214,8 @@ function step(batch_size)
 			return loss, dl_dx
 		end
 
+		if		phase == 'Pre'	then	optim_state.learningRate = opt.learningRatePre
+		elseif 	phase == 'Re'	then	optim_state.learningRate = opt.learningRateRe	end
 		_, fs = optim.sgd(feval, x, optim_state)
 		cnt = cnt + 1
 		loss_cur = loss_cur + fs[1]
@@ -249,9 +252,9 @@ end
 -------------------------------
 print('\n------------------------------------------------')
 print('\n>> Pretraining Phase')
-local LossTablePretrain = {}
-local AccTableTrainPretrain = {}
-local AccTableValidPretrain = {}
+LossTablePretrain = {}
+AccTableTrainPretrain = {}
+AccTableValidPretrain = {}
 
 last_acc_valid = 0
 decreasing = 0
@@ -260,7 +263,7 @@ threshold = 2
 local timePretrain = 0
 for i = 1, opt.iterPretrain do
 	local time = sys.clock()
-	local loss = step(opt.batch_size)
+	local loss = step(opt.batch_size, 'Pre')
 	local acc_train = evaluation(trainset, opt.batch_size)
 	local acc_valid = evaluation(validationset, opt.batch_size)
 	print(string.format('\nEpoch %d,', i))
@@ -352,9 +355,9 @@ local AccTableTrainRetrain = {}
 local AccTableValidRetrain = {}
 
 local timeRetrain = 0
-for i = 1, opt.iterPretrain do
+for i = 1, opt.iterRetrain do
 	local time = sys.clock()
-	local loss = step(opt.batch_size)
+	local loss = step(opt.batch_size, 'Re')
 	local acc_train = evaluation(trainset, opt.batch_size)
 	local acc_valid = evaluation(validationset, opt.batch_size)
 	print(string.format('\nEpoch %d,', i))
@@ -383,9 +386,51 @@ for i = 1, opt.iterPretrain do
 	print('... time consumed at epoch ' .. i ..' = ' .. (time) .. 's')
 end
 
+wP, _ = model:parameters()
 
-weight, _ = model:parameters()
+-- Count # of pruned weights
+numPrunedConv = {}
+numPrunedConvTotal = 0
+numPrunedFc = {}
+numPrunedFcTotal = 0
+
+for i, m in ipairs(model:findModules('SpatialConvolutionWithMask')) do
+	numPrunedConv[#numPrunedConv+1] = m.weightMask:eq(0):sum()
+	numPrunedConvTotal = numPrunedConvTotal + numPrunedConv[#numPrunedConv] 
+end
+for i, m in ipairs(model:findModules('LinearWithMask')) do
+	numPrunedFc[#numPrunedFc+1] = m.weightMask:eq(0):sum()
+	numPrunedFcTotal = numPrunedFcTotal + numPrunedFc[#numPrunedFc] 
+end
+
+-- Store only pruned weights
+prunedConvLayerSet = {}
+prunedFcLayerSet = {}
+for i = 1, #ConvLayerSet do
+	local wP = ConvLayerSet[i].weight:reshape(ConvLayerSet[i].weight:nElement())
+	local _, idx = torch.abs(wP):sort()
+	idx = idx[{{numPrunedConv[i]+1, -1}}]
+	local lal = torch.ByteTensor(wP:size(1)):fill(0)
+	for j = 1, idx:size(1) do
+		lal[idx[j]] = 1
+	end
+	prunedConvLayerSet[#prunedConvLayerSet+1] = wP[lal]
+end
+for i = 1, #FcLayerSet do
+	local wP = FcLayerSet[i].weight:reshape(FcLayerSet[i].weight:nElement())
+	local _, idx = torch.abs(wP):sort()
+	idx = idx[{{numPrunedFc[i]+1, -1}}]
+	local lal = torch.ByteTensor(wP:size(1)):fill(0)
+	for j = 1, idx:size(1) do
+		lal[idx[j]] = 1
+	end
+	prunedFcLayerSet[#prunedFcLayerSet+1] = wP[lal]
+end
+
+
+
 -- convert cudatensor to double tensor to save it in .mat format
+--[[
 if opt.model == 'lenet' then
 	conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
 	conv2 = torch.cat(weight[3]:view(16*6*3*3), weight[4], 1):double()
@@ -398,11 +443,15 @@ else
 	fc1 = torch.cat(weight[5]:view(30*75), weight[6], 1):double()
 	fc2 = torch.cat(weight[7]:view(10*30), weight[8], 1):double()
 end
+]]--
 
-
--- Save pretraining data
-matio.save(filename.WeightRetrain, {Conv1 = conv1, Conv2 = conv2, Fc1 = fc1, Fc2 = fc2, Fc3 = fc3})
+-- Save retrained model and data
 torch.save(filename.ModelRetrain, model)
+matio.save(filename.WeightRetrain, {Conv1 = prunedConvLayerSet[1]:double(), 
+									Conv2 = prunedConvLayerSet[2]:double(), 
+									Fc1 = prunedFcLayerSet[1]:double(), 
+									Fc2 = prunedFcLayerSet[2]:double(), 
+									Fc3 = prunedFcLayerSet[3]:double()} )
 
 
 print('... time consumed for Retraining = ' .. (timeRetrain) .. 's')
