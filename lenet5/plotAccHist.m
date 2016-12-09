@@ -131,3 +131,16 @@ xlabel('weight')
 title('Fully-connected Layer 3')
 fprintf('  # of weights in Fc3 = %d\n', numReFc3)
 fprintf('  Retraining Testset Accuracy: %0.3f\n', AccLoss.AccTestRetrain)
+
+
+%% Pruning results
+
+numPreTotal = numPreConv1 + numPreConv2 + ...
+                numPreFc1 + numPreFc2 + numPreFc3;
+numReTotal = numReConv1 + numReConv2 + ...
+                numReFc1 + numReFc2 + numReFc3;
+            
+fprintf('\n* Pruning results')
+fprintf('  # of total weights before pruning = %d\n', numPreTotal)
+fprintf('  # of total weights after pruning = %d\n', numReTotal)
+fprintf('  Compression Rate = %dX\n', round(numPreTotal/numReTotal))
