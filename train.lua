@@ -3,18 +3,12 @@
 require 'paths'
 require 'nn'
 require 'optim'
-require 'xlua'
-require 'cifar'
+local progress = require('progress')
 
-test = require('test')
+local dataset = require('dataset')
+local test = require('test')
 
 local M = {}
-
--- TODO: Use MNIST
-local function _prepare_data()
-    local cifar = require('cifar')
-    return cifar.load(5)
-end
 
 local function _step(model, criterion, data, opt_params, config_params)
     model:training()
@@ -28,7 +22,7 @@ local function _step(model, criterion, data, opt_params, config_params)
     for b = 1, data_size, batch do
         local mini_batch = math.min(b+batch-1, data_size) - b + 1
         if config_params.progress then
-            xlua.progress(b, data_size)
+            progress.progress(b, data_size)
         end
 
         shape[1] = mini_batch
@@ -56,6 +50,7 @@ local function _step(model, criterion, data, opt_params, config_params)
 
         count = count + 1
     end
+    progress.clear()
 
     return loss / count
 end
@@ -84,6 +79,8 @@ local function _train(model, criterion, data, opt_params, config_params)
         -- Intermmediate Report
         local train_accuracy = test.evaluate(model, data.train.data, data.train.labels, config_params)
         print(string.format('\tTrain Accuracy: %f', train_accuracy * 100))
+        local validate_accuracy = test.evaluate(model, data.validate.data, data.validate.labels, config_params)
+        print(string.format('\tValidate Accuracy: %f', validate_accuracy * 100))
         local test_accuracy = test.evaluate(model, data.test.data, data.test.labels, config_params)
         print(string.format('\tTest Accuracy: %f', test_accuracy * 100))
     end
@@ -104,7 +101,6 @@ function M.main(arg)
     cmd:option('-batch', 128, 'Batch size')
     cmd:option('-epochs', 20, 'Epoches to run')
     cmd:option('-saveEpoch', 0, 'Period to save model during training')
-    cmd:option('-nclass', 10, 'Number of classes of CIFAR (5, 10, 100)')
     cmd:option('-progress', false, 'True to show progress')
     cmd:option('-saveName', '', 'Filename when saving the model. If not specified, modelType or model will be used')
     cmd:option('-debug', false, 'True for debugging')
@@ -153,7 +149,6 @@ function M.main(arg)
         epochs = params.epochs,
         saveEpoch = params.saveEpoch,
         saveName = params.saveName,
-        nclass = params.nclass,
         progress = params.progress,
         debug = params.debug,
     }
@@ -168,8 +163,7 @@ function M.main(arg)
     end
 
     -- Load the data
-    -- TODO: Use MNIST
-    local data = _prepare_data()
+    local data = dataset.load()
     if config_params.debug then
         print(data)
     end
@@ -181,6 +175,8 @@ function M.main(arg)
         criterion:cuda()
         data.train.data = data.train.data:cuda()
         data.train.labels = data.train.labels:cuda()
+        data.validate.data = data.validate.data:cuda()
+        data.validate.labels = data.validate.labels:cuda()
         data.test.data = data.test.data:cuda()
         data.test.labels = data.test.labels:cuda()
     end
