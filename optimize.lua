@@ -21,7 +21,7 @@ config = {
     model_type = 'caffe',
 
     -- Data configuration
-    nclass = 10,
+    nclass = 5,
     train_cnt = 50000,
     validate_cnt = 0,
     test_cnt = 10000
