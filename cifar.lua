@@ -23,6 +23,43 @@ cifar/
 
 local M = {}
 
+local function _load_cifar_5()
+    local train_data = {
+        data = torch.DoubleTensor(50000, 3, 32, 32),
+        labels = torch.DoubleTensor(50000)
+    }
+    local test_data = {
+        data = torch.DoubleTensor(10000, 3, 32, 32),
+        labels = torch.DoubleTensor(10000)
+    }
+
+    -- Load training data
+    for i = 1, 5 do
+        local lower = 10000*(i-1) + 1
+        local upper = 10000*i
+
+        local filename = string.format('cifar/cifar-5-t7/data_batch_%d.t7', i)
+        local batch = torch.load(filename)
+        train_data.data[{{lower, upper}, {}, {}, {}}] = batch.data:reshape(10000, 3, 32, 32)
+        train_data.labels[{{lower, upper}}] = batch.labels + 1
+    end
+
+    -- Load test data
+    test_batch = torch.load('cifar/cifar-5-t7/test_batch.t7')
+    test_data.data[{{}}] = test_batch.data:reshape(10000, 3, 32, 32)
+    test_data.labels[{{}}] = test_batch.labels + 1
+
+    mean = torch.mean(train_data.data, 1):squeeze()
+    for i = 1, 50000 do
+        train_data.data[i]:csub(mean)
+    end
+    for i = 1, 10000 do
+        test_data.data[i]:csub(mean)
+    end
+
+    return {train=train_data, test=test_data}
+end
+
 local function _load_cifar_10()
     local train_data = {
         data = torch.DoubleTensor(50000, 3, 32, 32),
@@ -98,7 +135,9 @@ local function _load_cifar_100()
 end
 
 function M.load(nclass)
-    if nclass == 10 then
+    if nclass == 5 then
+        return _load_cifar_5()
+    elseif nclass == 10 then
         return _load_cifar_10()
     else
         return _load_cifar_100()
