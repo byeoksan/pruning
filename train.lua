@@ -8,14 +8,15 @@ require 'cifar'
 
 local M = {}
 
+-- TODO: Use MNIST
 local function _prepare_data()
     local cifar = require('cifar')
     return cifar.load(5)
 end
 
-local function _step(model, criterion, data, opt_params, train_params)
+local function _step(model, criterion, data, opt_params, config_params)
     model:training()
-    local batch = train_params.batch
+    local batch = config_params.batch
     local shape = data.train.data:size()
     local data_size = shape[1]
     local perm = torch.randperm(data_size):long()
@@ -24,7 +25,7 @@ local function _step(model, criterion, data, opt_params, train_params)
     local count = 0
     for b = 1, data_size, batch do
         local mini_batch = math.min(b+batch-1, data_size) - b + 1
-        if train_params.progress then
+        if config_params.progress then
             xlua.progress(b, data_size)
         end
 
@@ -32,7 +33,7 @@ local function _step(model, criterion, data, opt_params, train_params)
         local inputs = torch.DoubleTensor(shape)
         local targets = torch.DoubleTensor(mini_batch)
 
-        if train_params.cuda then
+        if config_params.cuda then
             inputs = inputs:cuda()
             targets = targets:cuda()
         end
@@ -57,19 +58,19 @@ local function _step(model, criterion, data, opt_params, train_params)
     return loss / count
 end
 
-local function _train(model, criterion, data, opt_params, train_params)
-    local saveEpoch = train_params.saveEpoch
-    local saveName = train_params.saveName
+local function _train(model, criterion, data, opt_params, config_params)
+    local saveEpoch = config_params.saveEpoch
+    local saveName = config_params.saveName
 
-    for epoch = 1, train_params.epochs do
+    for epoch = 1, config_params.epochs do
         print(string.format('Training Epoch %d...', epoch))
-        local loss = _step(model, criterion, data, opt_params, train_params)
+        local loss = _step(model, criterion, data, opt_params, config_params)
         print(string.format('Train loss: %f', loss))
 
         -- Intermmediate Save
-        if (saveEpoch > 0 and (epoch % saveEpoch) == 0) or epoch == train_params.epochs then
+        if (saveEpoch > 0 and (epoch % saveEpoch) == 0) or epoch == config_params.epochs then
             local name = string.format('%s_%d.t7', saveName, epoch)
-            if train_params.cuda then
+            if config_params.cuda then
                 model:double()
                 torch.save(name, model)
                 model:cuda()
@@ -141,7 +142,7 @@ function M.main(arg)
         momentum = params.momentum,
     }
 
-    train_params = {
+    config_params = {
         cuda = params.cuda,
         batch = params.batch,
         epochs = params.epochs,
@@ -152,9 +153,9 @@ function M.main(arg)
         debug = params.debug,
     }
 
-    if train_params.debug then
+    if config_params.debug then
         print('=== Training Parameters ===')
-        print(train_params)
+        print(config_params)
         print('=== Optimization Parameters ===')
         print(opt_params)
         print('=== Model ===')
@@ -164,7 +165,7 @@ function M.main(arg)
     -- Load the data
     -- TODO: Use MNIST
     local data = _prepare_data()
-    if train_params.debug then
+    if config_params.debug then
         print(data)
     end
 
@@ -179,7 +180,7 @@ function M.main(arg)
         data.test.labels = data.test.labels:cuda()
     end
 
-    _train(model, criterion, data, opt_params, train_params)
+    _train(model, criterion, data, opt_params, config_params)
 end
 
 return M
