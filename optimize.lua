@@ -159,6 +159,8 @@ for i = 1, config.epochs do
 	io.write(string.format('\t         Train loss: %.8f\n', loss))
 	local acc_train = evaluation(train_set)
 	io.write(string.format('\t     Train Accuracy: %.8f\n', acc_train*100))
+    local acc_test = evaluation(test_set)
+	io.write(string.format('\t     Test  Accuracy: %.8f\n', acc_test*100))
 	--local acc_valid = evaluation(validate_set)
 	--io.write(string.format('\tValidation Accuracy: %.8f\n', acc_valid*100))
 	
