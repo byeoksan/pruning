@@ -1,13 +1,9 @@
 #!/usr/bin/env th
 
-require 'xlua'
+local progress = require('progress')
+local dataset = require('dataset')
 
 local M = {}
-
-local function _prepare_data()
-    local cifar = require('cifar')
-    return cifar.load(5)
-end
 
 function M.evaluate(model, data, labels, config_params)
     model:evaluate()
@@ -19,7 +15,7 @@ function M.evaluate(model, data, labels, config_params)
     for i = 1, data_size, batch do
         local mini_batch = math.min(i+batch-1, data_size) - i + 1
         if config_params.progress then
-            xlua.progress(i, data_size)
+            progress.progress(i, data_size)
         end
 
         shape[1] = mini_batch
@@ -40,6 +36,7 @@ function M.evaluate(model, data, labels, config_params)
 
         correct = correct + curr_correct
     end
+    progress.clear()
 
     return correct / data_size
 end
@@ -52,7 +49,6 @@ function M.main(arg)
     cmd:option('-model', '', 'Trained model to test')
     cmd:option('-cuda', false, 'Whether to use cuda')
     cmd:option('-batch', 128, 'Batch size')
-    cmd:option('-nclass', 10, 'Number of classes of CIFAR (5, 10, 100)')
     cmd:option('-progress', false, 'True to show progress')
     cmd:option('-debug', false, 'True for debugging')
 
@@ -72,7 +68,6 @@ function M.main(arg)
     config_params = {
         cuda = params.cuda,
         batch = params.batch,
-        nclass = params.nclass,
         progress = params.progress,
         debug = params.debug,
     }
@@ -84,10 +79,7 @@ function M.main(arg)
         print(model)
     end
 
-    -- Load the data
-    -- TODO: Use MNIST
-    -- TODO: _prepare_data is duplicate in train.lua
-    local data = _prepare_data()
+    local data = dataset.load()
     if config_params.debug then
         print(data)
     end
@@ -104,6 +96,8 @@ function M.main(arg)
 
     local train_accuracy = M.evaluate(model, data.train.data, data.train.labels, config_params)
     print(string.format('Train Accuracy: %f', train_accuracy * 100))
+    local validate_accuracy = M.evaluate(model, data.validate.data, data.validate.labels, config_params)
+    print(string.format('validate Accuracy: %f', validate_accuracy * 100))
     local test_accuracy = M.evaluate(model, data.test.data, data.test.labels, config_params)
     print(string.format('Test Accuracy: %f', test_accuracy * 100))
 end
