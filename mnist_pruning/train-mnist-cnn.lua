@@ -15,9 +15,9 @@ require 'SpatialConvolutionWithMask'
 opt = {}
 opt.cuda = false
 opt.saveDir = 'model/'
-opt.model = 'cnnA' -- 'cnnA' 'cnnB' or 'mlp' for debugging
+opt.model = 'lenet' -- 'cnnA' 'cnnB' or 'mlp' or 'lenet' for debugging
 opt.batchsize = 100 -- mini-batch size (1=pure stochastic)
-opt.max_iters = 30
+opt.max_iters = 100
 print(opt)
 sgd_params = {
    learningRate = 1e-2,
@@ -107,6 +107,30 @@ elseif opt.model == 'cnnB' then
     model:add(nn.LogSoftMax())
 
     print('Network \n'..model:__tostring())
+
+elseif opt.model == 'lenet' then
+    model = nn.Sequential()
+    model:add(nn.View(1,28,28))
+    --model:add(nn.SpatialConvolution(1,6,5,5)) -- (1x28x28) goes in, (6x24x24) goes out -- Conv1
+    model:add(SpatialConvolutionWithMask(1,6,5,5))  -- (1x28x28) goes in, (6x24x24) goes out -- Conv1
+    model:add(nn.SpatialMaxPooling(2,2,2,2))    -- (6x24x24) goes out, (6x12x12) goes out
+    model:add(nn.ReLU())
+    --model:add(nn.SpatialConvolution(6,16,3,3))    -- (6x12x12) goes in, (16x10x10) goes out -- Conv2
+    model:add(SpatialConvolutionWithMask(6,16,3,3)) -- (6x12x12) goes in, (16x10x10) goes out -- Conv2
+    model:add(nn.SpatialMaxPooling(2,2,2,2))    -- (16x10x10) goes in, (16x5x5) goes out
+    model:add(nn.ReLU())
+    model:add(nn.View(16*5*5))
+    --model:add(nn.Linear(16*5*5, 120))
+    model:add(LinearWithMask(16*5*5, 120))
+    model:add(nn.ReLU())
+    --model:add(nn.Linear(120,84))
+    model:add(LinearWithMask(120,84))
+    model:add(nn.ReLU())
+    --model:add(nn.Linear(84,10))
+    model:add(LinearWithMask(84,10))
+    model:add(nn.LogSoftMax())
+    print('Network \n'..model:__tostring())
+
 end
 
 -- using the negative log likelihood criterion (Fill in here)
@@ -140,6 +164,7 @@ function step(batch_size)
     local shuffle = torch.randperm(trainset.size)
     batch_size = batch_size or 200
     
+    model:training()
     for t = 1,trainset.size,batch_size do
         -- setup inputs and targets for this mini-batch
         local size = math.min(t + batch_size - 1, trainset.size) - t
@@ -187,6 +212,7 @@ function evaluation(dataset, batch_size)
     local count = 0
     batch_size = batch_size or 200
     
+    model:evaluate()
     for i = 1,dataset.size,batch_size do
         local size = math.min(i + batch_size - 1, dataset.size) - i
         local inputs = dataset.data[{{i,i+size-1}}]
@@ -253,6 +279,8 @@ itorch.image(model:get(5).weight)
 -----------------------------------------------------------------------
 -- 4. Save the model
 -----------------------------------------------------------------------
+
+
 filename = opt.saveDir..'cnn-mnist-model.t7'
 print('5. Save the model in '..filename..'\n')
 

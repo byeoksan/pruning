@@ -12,12 +12,14 @@ require 'lfs'
 require 'image'
 require 'LinearWithMask'
 require 'SpatialConvolutionWithMask'
+require 'xlua'
+
 opt = {}
 opt.cuda = false
 opt.saveDir = 'model/'
 opt.model = 'load' -- 'cnnA' 'cnnB' or 'mlp' for debugging
 opt.batchsize = 100 -- mini-batch size (1=pure stochastic)
-opt.max_iters = 30
+opt.max_iters = 50
 print(opt)
 sgd_params = {
    learningRate = 1e-3,
@@ -127,10 +129,14 @@ if opt.cuda then
 end
 
 sps = model:findModules('SpatialConvolutionWithMask')
-sps[1]:prune(1)
+sps[1]:prune_ratio(100)
+print(sps[1].weight)
+print(sps[1].bias)
+sps[2]:prune_ratio(100)
 lins = model:findModules('LinearWithMask')
-lins[1]:prune(1)
-lins[2]:prune(1)
+--lins[1]:prune_ratio(50)
+--lins[2]:prune_ratio(50)
+--lins[3]:prune_ratio(50)
 
 -----------------------------------------------------------------------
 -- Trainer
@@ -146,6 +152,7 @@ function step(batch_size)
     
     for t = 1,trainset.size,batch_size do
         -- setup inputs and targets for this mini-batch
+        xlua.progress(t, trainset.size)
         local size = math.min(t + batch_size - 1, trainset.size) - t
         local inputs = torch.Tensor(size, 28, 28)
         local targets = torch.Tensor(size)
@@ -192,6 +199,7 @@ function evaluation(dataset, batch_size)
     batch_size = batch_size or 200
     
     for i = 1,dataset.size,batch_size do
+        xlua.progress(i, dataset.size)
         local size = math.min(i + batch_size - 1, dataset.size) - i
         local inputs = dataset.data[{{i,i+size-1}}]
         local targets = dataset.label[{{i,i+size-1}}]:long()
@@ -224,7 +232,8 @@ for i = 1,opt.max_iters do
     local accuracy = evaluation(validationset,opt.batchsize)
     print(string.format('Epoch %d , Train loss: %4f          Validation accuracy: %.2f', i, loss, accuracy*100))
 --    print(string.format('          Validation accuracy: %.2f', accuracy*100))
-    
+    local accuracy_test = evaluation(testset)
+    print(string.format('\nTest accuracy: %.2f \n', accuracy_test*100))
     -- Early stopping
     if accuracy < last_accuracy then
         if decreasing > threshold then break end

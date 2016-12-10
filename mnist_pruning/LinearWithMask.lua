@@ -61,6 +61,7 @@ function LinearWithMask:prune(qfactor)
     local alive_weights = self.weight[self.weightMask:eq(1)]
     if self.bias then
         local alive_bias = self.bias[self.biasMask:eq(1)]
+
         if alive_bias:dim() > 0 then
             alive_weights = alive_weights:cat(alive_bias)
         end
@@ -80,6 +81,61 @@ function LinearWithMask:prune(qfactor)
         self:applyBiasMask()
     end
 end
+
+function find_threshold(input_weight, qfactor)
+    total_size = 1
+    weight_size = input_weight:size()
+    for i = 1, weight_size:size() do
+        total_size = total_size * weight_size[i] 
+    end
+    weight_abs = torch.abs(input_weight)
+    resize_weight_abs = weight_abs:view(total_size)
+    sort_weight, i = torch.sort(resize_weight_abs)
+    prune_index = torch.ceil(qfactor/100 * total_size)
+    local threshold = sort_weight[prune_index]
+    return threshold
+end
+
+--debug function
+--[[
+function count_one(input_weight)
+    local input_size = input_weight:size()
+    local count = 0
+    print (input_size)
+    for i = 1, input_size[1] do
+        if input_weight[i] == 1 then
+            count  = count +1
+        end
+    end
+    print (count)
+end
+--]]
+
+function LinearWithMask:prune_ratio(qfactor)
+   
+    local alive_weights = self.weight[self.weightMask:eq(1)]
+    if self.bias then
+        local alive_bias = self.bias[self.biasMask:eq(1)]
+        
+        if alive_bias:dim() > 0 then
+            alive_weights = alive_weights:cat(alive_bias)
+        end
+    end
+    local threshold_weight = find_threshold(self.weight, qfactor)
+    local threshold_bias = find_threshold(self.bias, qfactor)
+
+    local new_weight_mask = torch.abs(self.weight):gt(threshold_weight)
+    self.weightMask[new_weight_mask:eq(0)] = 0
+    self:applyWeightMask()
+
+    if self.bias then
+        local new_bias_mask = torch.abs(self.bias):gt(threshold_bias)
+        self.biasMask[new_bias_mask:eq(0)] = 0
+        self:applyBiasMask()
+    end
+end
+
+
 
 function LinearWithMask:updateOutput(input)
     return parent.updateOutput(self, input)
