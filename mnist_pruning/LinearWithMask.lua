@@ -11,6 +11,8 @@ function LinearWithMask:__init(inputSize, outputSize, bias)
    if self.bias and not self.biasMask then
        self.biasMask = torch.DoubleTensor(self.bias:size()):fill(1)
    end
+   self.weight_init = self.weight
+   print(self.weight_init)
 end
 
 function LinearWithMask:noBias()

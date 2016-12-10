@@ -91,7 +91,7 @@ function find_threshold(input_weight, qfactor)
     resize_weight_abs = weight_abs:view(total_size)
     sort_weight, i = torch.sort(resize_weight_abs)
     prune_index = torch.ceil(qfactor/100 * total_size)
-    print(prune_index)
+    
     local threshold = sort_weight[prune_index]
     return threshold
 end

@@ -130,8 +130,8 @@ end
 
 sps = model:findModules('SpatialConvolutionWithMask')
 sps[1]:prune_ratio(100)
-print(sps[1].weight)
-print(sps[1].bias)
+--print(sps[1].weight)
+--print(sps[1].bias)
 sps[2]:prune_ratio(100)
 lins = model:findModules('LinearWithMask')
 --lins[1]:prune_ratio(50)
