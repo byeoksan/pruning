@@ -6,6 +6,8 @@ require 'optim'
 require 'xlua'
 require 'cifar'
 
+test = require('test')
+
 local M = {}
 
 -- TODO: Use MNIST
@@ -65,7 +67,7 @@ local function _train(model, criterion, data, opt_params, config_params)
     for epoch = 1, config_params.epochs do
         print(string.format('Training Epoch %d...', epoch))
         local loss = _step(model, criterion, data, opt_params, config_params)
-        print(string.format('Train loss: %f', loss))
+        print(string.format('\tTrain loss: %f', loss))
 
         -- Intermmediate Save
         if (saveEpoch > 0 and (epoch % saveEpoch) == 0) or epoch == config_params.epochs then
@@ -80,7 +82,10 @@ local function _train(model, criterion, data, opt_params, config_params)
         end
 
         -- Intermmediate Report
-        -- TODO: use test module
+        local train_accuracy = test.evaluate(model, data.train.data, data.train.labels, config_params)
+        print(string.format('\tTrain Accuracy: %f', train_accuracy * 100))
+        local test_accuracy = test.evaluate(model, data.test.data, data.test.labels, config_params)
+        print(string.format('\tTest Accuracy: %f', test_accuracy * 100))
     end
 end
 
