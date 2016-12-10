@@ -91,10 +91,8 @@ local function _allcnn(nclass)
     model:add(conv(192, 10, 1, 1, 1, 1)) -- 10 x 6 x 6
     model:add(relu(true))
 
-    --[[
     model:add(avgpool(6, 6))
     model:add(view(10*1*1))
-    --]]
 
     return model
 end
@@ -168,41 +166,35 @@ end
 local function _myvgg(nclass)
     -- https://gist.github.com/ksimonyan/211839e770f7b538e2d8#file-readme-md
     model = nn.Sequential()
-    --model:add(view(-1, 3, 32, 32))
     model:add(conv(3, 64, 3, 3, 1, 1, 1, 1)) -- conv1_1
     model:add(relu(true))
-    --model:add(conv(64, 64, 3, 3, 1, 1, 1,1)) -- conv1_2
-    --model:add(relu(true))
+    model:add(dropout(0.5)) -- drop1
     model:add(maxpool(2, 2, 2, 2)) -- pool1
 
     model:add(conv(64, 128, 3, 3, 1, 1, 1, 1)) -- conv2_1
     model:add(relu(true))
-    --model:add(conv(128, 128, 3, 3, 1, 1, 1, 1)) -- conv2_2
-    --model:add(relu(true))
+    model:add(dropout(0.5)) -- drop2
     model:add(maxpool(2, 2, 2, 2)) -- pool2
 
     model:add(conv(128, 256, 3, 3, 1, 1, 1, 1)) -- conv3_1
     model:add(relu(true))
     model:add(conv(256, 256, 3, 3, 1, 1, 1, 1)) -- conv3_2
     model:add(relu(true))
-    --model:add(conv(256, 256, 3, 3, 1, 1, 1, 1)) -- conv3_3
-    --model:add(relu(true))
+    model:add(dropout(0.5)) -- drop3
     model:add(maxpool(2, 2, 2, 2)) -- pool3
 
     model:add(conv(256, 512, 3, 3, 1, 1, 1, 1)) -- conv4_1
     model:add(relu(true))
     model:add(conv(512, 512, 3, 3, 1, 1, 1, 1)) -- conv4_2
     model:add(relu(true))
-    --model:add(conv(512, 512, 3, 3, 1, 1, 1, 1)) -- conv4_3
-    --model:add(relu(true))
+    --model:add(dropout(0.5)) -- drop4
     model:add(maxpool(2, 2, 2, 2)) -- pool4
 
     model:add(conv(512, 512, 3, 3, 1, 1, 1, 1)) -- conv5_1
     model:add(relu(true))
     model:add(conv(512, 512, 3, 3, 1, 1, 1, 1)) -- conv5_2
     model:add(relu(true))
-    --model:add(conv(512, 512, 3, 3, 1, 1, 1, 1)) -- conv5_3
-    --model:add(relu(true))
+    --model:add(dropout(0.5)) -- drop5
     model:add(maxpool(2, 2, 2, 2)) -- pool5
 
     model:add(view(512))
@@ -217,15 +209,53 @@ local function _myvgg(nclass)
     return model
 end
 
+local function _exp(nclass)
+    model = nn.Sequential()
+    model:add(conv(3, 96, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+    model:add(conv(96, 96, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+    model:add(conv(96, 96, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+    model:add(dropout(0.5))
+    model:add(maxpool(3, 3, 2, 2))
+
+    model:add(conv(96, 192, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+    model:add(conv(192, 192, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+    model:add(conv(192, 192, 3, 3, 1, 1, 1, 1))
+    model:add(relu(true))
+    model:add(dropout(0.5))
+    model:add(maxpool(3, 3, 2, 2))
+
+    model:add(view(192*7*7))
+    model:add(linear(192*7*7, 2048))
+    model:add(relu(true))
+    model:add(dropout(0.5))
+    model:add(linear(2048, 2048))
+    model:add(relu(true))
+    model:add(dropout(0.5))
+    model:add(linear(2048, nclass))
+
+    return model
+
+end
+
 local model_generator = {
     caffe = _caffe,
     allcnn = _allcnn,
     vgg = _vgg,
     myvgg = _myvgg,
+    exp = _exp,
 }
 
 function M.load(name, nclass)
     return model_generator[name](nclass)
+end
+
+function M.restore(path)
+    return torch.load(path)
 end
 
 return M

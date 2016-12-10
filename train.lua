@@ -67,7 +67,7 @@ local function _train(model, criterion, data, opt_params, train_params)
         print(string.format('Train loss: %f', loss))
 
         -- Intermmediate Save
-        if saveEpoch > 0 and (epoch % saveEpoch) == 0 then
+        if (saveEpoch > 0 and (epoch % saveEpoch) == 0) or epoch == train_params.epochs then
             local name = string.format('%s_%d.t7', saveName, epoch)
             if train_params.cuda then
                 model:double()
