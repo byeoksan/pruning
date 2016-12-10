@@ -66,6 +66,10 @@ function SpatialConvolutionWithMask:prune(qfactor)
         end
     end
 
+    if alive_weights:dim() == 0 then
+        return
+    end
+
     local mean = alive_weights:mean()
     local std = alive_weights:std()
     local threshold = torch.abs(qfactor) * std
