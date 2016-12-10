@@ -1,7 +1,7 @@
 ----------------------------------------------------------------
 -- MNIST by Lenet-5 based on 'small dnn example by Rudra Poudel'
 ----------------------------------------------------------------
-
+-- Iterative pruning version
 require 'torch'
 require 'nn'
 require 'optim'
@@ -23,12 +23,13 @@ cmd:option('-type',				'cuda',		'type: float | cuda')
 cmd:option('-model',			'lenet',	'type: LeNet5 | defaultNet')
 cmd:option('-seed',				1,			'fixed input seed for repeatable experiments')
 cmd:option('-learningRatePre',	1e-1,		'learning for pretraining rate at t=0')
-cmd:option('-learningRateRe',	1e-2,		'learning for retraining rate at t=0')
+cmd:option('-learningRateRe',	1e-2*2,		'learning for retraining rate at t=0')
+cmd:option('-weightDecay',		1e-2,		'weight decay')
 cmd:option('-momentum',			0.6,		'momentum')
-cmd:option('-weight_decay',		1e-3,		'weight decay')
 cmd:option('-batchsize',		200,		'mini-batch size (1 = pure stochastic)')
-cmd:option('-iterPretrain',		15,			'Maximum iteration number for Pretraining')
-cmd:option('-iterRetrain',		20,			'Maximum iteration number for Retraining')
+cmd:option('-iterPretrain',		10,			'Maximum iteration number for Pretraining')
+cmd:option('-iterRetrain',		10,			'Maximum iteration number for Retraining')
+cmd:option('-iterPruning',		5,			'The number of iterative pruning')
 cmd:text()
 
 print("\n... learning setup")
@@ -37,7 +38,7 @@ print(opt)
 
 function memoryUse()
 	local free, total = cutorch.getMemoryUsage(opt.gpuid)
-	print(string.format('%.4fMB is available out of %.4fMB (%.2f%%)', free/1024/1024, total/1024/1024, free/total*100))
+	print(string.format('... %.4fMB is available out of %.4fMB (%.2f%%)', free/1024/1024, total/1024/1024, free/total*100))
 end
 
 -- set options
@@ -62,6 +63,7 @@ local optim_state = {
 local optim_method = optim.sgd
 
 local filename = {
+	NumWeights = string.format(tostring(opt.model)..'NumWeight.mat'),
 	WeightPretrain = string.format(tostring(opt.model)..'WeightPretrain.mat'),
 	WeightPruned = string.format(tostring(opt.model)..'WeightPruned.mat'),
 	WeightRetrain = string.format(tostring(opt.model)..'WeightRetrained.mat'),
@@ -77,22 +79,17 @@ model = nn.Sequential()
 
 if opt.model == 'lenet' then					-- LeNet-5
 	model:add(nn.View(1,28,28))
-	--model:add(nn.SpatialConvolution(1,6,5,5))	-- (1x28x28) goes in, (6x24x24) goes out -- Conv1
 	model:add(SpatialConvolutionWithMask(1,6,5,5))	-- (1x28x28) goes in, (6x24x24) goes out -- Conv1
 	model:add(nn.SpatialMaxPooling(2,2,2,2)) 	-- (6x24x24) goes out, (6x12x12) goes out
 	model:add(nn.ReLU())
-	--model:add(nn.SpatialConvolution(6,16,3,3))	-- (6x12x12) goes in, (16x10x10) goes out -- Conv2
 	model:add(SpatialConvolutionWithMask(6,16,3,3))	-- (6x12x12) goes in, (16x10x10) goes out -- Conv2
 	model:add(nn.SpatialMaxPooling(2,2,2,2))	-- (16x10x10) goes in, (16x5x5) goes out
 	model:add(nn.ReLU())
 	model:add(nn.View(16*5*5))
-	--model:add(nn.Linear(16*5*5, 120))
 	model:add(LinearWithMask(16*5*5, 120))
 	model:add(nn.ReLU())
-	--model:add(nn.Linear(120,84))
 	model:add(LinearWithMask(120,84))
 	model:add(nn.ReLU())
-	--model:add(nn.Linear(84,10))
 	model:add(LinearWithMask(84,10))
 	model:add(nn.LogSoftMax())
 else
@@ -118,7 +115,6 @@ if opt.type == 'cuda' then
 	criterion = criterion:cuda()
 end
 print(model,'\n')
-
 print("\n... counting memory before training")
 print(optnet.countUsedMemory(model))
 memoryUse()
@@ -132,7 +128,6 @@ memoryUse()
 -- bmode = 'DHWB' -- depth/channels x height x width x batch
 traindataset = mnist.traindataset() -- you can access its size by 'traindataset.size'
 testset = mnist.testdataset()
-
 traindataset.data = traindataset.data:double()
 mean = traindataset.data:mean()
 std = traindataset.data:std()
@@ -165,7 +160,6 @@ testset.data:div(std)
 
 
 if opt.type == 'cuda' then
-	print('\n... put data into gpu')
 	trainset.data = trainset.data:cuda()
 	trainset.label = trainset.label:cuda()
 	validationset.data = validationset.data:cuda()
@@ -266,10 +260,10 @@ for i = 1, opt.iterPretrain do
 	local loss = step(opt.batch_size, 'Pre')
 	local acc_train = evaluation(trainset, opt.batch_size)
 	local acc_valid = evaluation(validationset, opt.batch_size)
-	print(string.format('\nEpoch %d,', i))
-	print(string.format('	Train loss		: %.8f', loss))
-	print(string.format('	Train Accuracy		: %.8f', acc_train*100))
-	print(string.format('	Validation Accuracy	: %.8f', acc_valid*100))
+	print(string.format('\n>> Epoch %d,', i))
+	print(string.format('... Train loss				: %.8f', loss))
+	print(string.format('... Train Accuracy			: %.8f', acc_train*100))
+	print(string.format('... Validation Accuracy	: %.8f', acc_valid*100))
 	memoryUse()
 
 	table.insert(LossTablePretrain, loss)
@@ -316,78 +310,107 @@ print("... counting memory after Pretraining")
 print(optnet.countUsedMemory(model))
 print('\n>> Pretraining Phase, Evaluation')
 local AccTestPretrain = evaluation(testset)
-print(string.format('\n		Test Accuracy after Pretraining	: %.4f', AccTestPretrain*100))
-
+print(string.format('\n... Test Accuracy after Pretraining	: %.4f', AccTestPretrain*100))
 
 
 -------------------------------
--- Pruning
+-- Iterative Pruning
 -------------------------------
-print('\n------------------------------------------------')
-print('\n>> Pruning')
+local qConv = 1
+local qFc = 1
+numWeight = {}
 ConvLayerSet = model:findModules('SpatialConvolutionWithMask')
 FcLayerSet = model:findModules('LinearWithMask')
+local numWeightPre = 0
+for i = 1, #ConvLayerSet	do	numWeightPre = numWeightPre + ConvLayerSet[i].weight:nElement()	end
+for i = 1, #FcLayerSet 		do	numWeightPre = numWeightPre + FcLayerSet[i].weight:nElement()	end
+AccTableTestRetrain = {}
+for j = 1, opt.iterPruning do
+	-------------------------------------------------------------
+	-- Pruning
+	-------------------------------------------------------------
+	print('\n------------------------------------------------')
+	print('\n>> Pruning #' ... j)
 
--- quality factor for pruning
-local qConv = {}	
-local qFc = {}
-
--- Set thresholds and do pruning
-for i = 1, #ConvLayerSet do
-	qConv[#qConv+1] = 0.5
-	ConvLayerSet[i]:prune(qConv[i])
-end
-for i = 1, #FcLayerSet do
-	qFc[#qFc+1] = 0.5
-	FcLayerSet[i]:prune(qFc[i])
-end
--- Save Pruned weights
-
-
-
--------------------------------
--- ReTraining
--------------------------------
-print('\n------------------------------------------------')
-print('\n>> Retraining')
-local LossTableRetrain = {}
-local AccTableTrainRetrain = {}
-local AccTableValidRetrain = {}
-
-local timeRetrain = 0
-for i = 1, opt.iterRetrain do
-	local time = sys.clock()
-	local loss = step(opt.batch_size, 'Re')
-	local acc_train = evaluation(trainset, opt.batch_size)
-	local acc_valid = evaluation(validationset, opt.batch_size)
-	print(string.format('\nEpoch %d,', i))
-	print(string.format('	Train loss		: %.8f', loss))
-	print(string.format('	Train Accuracy		: %.8f', acc_train*100))
-	print(string.format('	Validation Accuracy	: %.8f', acc_valid*100))
-	memoryUse()
-
-	table.insert(LossTableRetrain, loss)
-	table.insert(AccTableTrainRetrain, acc_train*100)
-	table.insert(AccTableValidRetrain, acc_valid*100)
-	
-	if acc_valid < last_acc_valid then
-		if decreasing > threshold then
-			print('... Early Stopping!!')
-			break 
-		end
-		decreasing = decreasing + 1
-	else
-		decreasing = 0
+	-- Set thresholds and do pruning
+	for i = 1, #ConvLayerSet do
+		--qConv[#qConv+1] = 0.5
+		--ConvLayerSet[i]:prune(qConv[i])
+		qConv = qConv * 1.1
+		ConvLayerSet[i]:prune(qConv)
 	end
-	last_acc_valid = acc_valid
+	for i = 1, #FcLayerSet do
+		--qFc[#qFc+1] = 0.5
+		--FcLayerSet[i]:prune(qFc[i])
+		qFc = qFc * 1.1
+		FcLayerSet[i]:prune(qFc)
+	end
 
-	time = sys.clock() - time
-	timeRetrain = timeRetrain + time
-	print('... time consumed at epoch ' .. i ..' = ' .. (time) .. 's')
+	-- Count # of pruned weights
+	local numPrunedConv = {}
+	local numPrunedConvTotal = 0
+	local numPrunedFc = {}
+	local numPrunedFcTotal = 0
+
+	for i, m in ipairs(model:findModules('SpatialConvolutionWithMask')) do
+		numPrunedConv[#numPrunedConv+1] = m.weightMask:eq(0):sum()
+		numPrunedConvTotal = numPrunedConvTotal + numPrunedConv[#numPrunedConv] 
+	end
+	for i, m in ipairs(model:findModules('LinearWithMask')) do
+		numPrunedFc[#numPrunedFc+1] = m.weightMask:eq(0):sum()
+		numPrunedFcTotal = numPrunedFcTotal + numPrunedFc[#numPrunedFc] 
+	end
+	local wt = numWeightPre - numPrunedConvTotal - numPrunedFcTotal
+	print('... # of pruned synapses in convolution layers: ' .. numPrunedConvTotal)
+	print('... # of pruned synapses in fully-connected layers: ' .. numPrunedFcTotal)
+	print('... # of remaining synapses in total: ' .. wt)
+	print('... (# of synapses in original network: ' .. numWeightPre .. ')')
+	table.insert(numWeight, wt)
+
+	-------------------------------------------------------------
+	-- ReTraining
+	-------------------------------------------------------------
+	print('\n------------------------------------------------')
+	print('\n>> Retraining')
+
+	local timeRetrain = 0
+	for i = 1, opt.iterRetrain do
+		local time = sys.clock()
+		local loss = step(opt.batch_size, 'Re')
+		local acc_train = evaluation(trainset, opt.batch_size)
+		local acc_valid = evaluation(validationset, opt.batch_size)
+		print(string.format('\nEpoch %d,', i))
+		print(string.format('	Train loss		: %.8f', loss))
+		print(string.format('	Train Accuracy		: %.8f', acc_train*100))
+		print(string.format('	Validation Accuracy	: %.8f', acc_valid*100))
+		memoryUse()
+		
+		if acc_valid < last_acc_valid then
+			if decreasing > threshold then
+				print('... Early Stopping!!')
+				break 
+			end
+			decreasing = decreasing + 1
+		else
+			decreasing = 0
+		end
+		last_acc_valid = acc_valid
+
+		time = sys.clock() - time
+		timeRetrain = timeRetrain + time
+		print('... time consumed at epoch ' .. i ..' = ' .. (time) .. 's')
+	end
+
+	local AccTestRetrain = evaluation(testset)
+	print(string.format('\n... Test Accuracy after Retraining	: %.4f', AccTestRetrain*100))
+	table.insert(AccTableTestRetrain, AccTestRetrain*100)
 end
 
-wP, _ = model:parameters()
 
+------------------------------------------------------------------------
+-- Saving models and data
+------------------------------------------------------------------------
+--wP, _ = model:parameters()
 -- Count # of pruned weights
 numPrunedConv = {}
 numPrunedConvTotal = 0
@@ -402,6 +425,12 @@ for i, m in ipairs(model:findModules('LinearWithMask')) do
 	numPrunedFc[#numPrunedFc+1] = m.weightMask:eq(0):sum()
 	numPrunedFcTotal = numPrunedFcTotal + numPrunedFc[#numPrunedFc] 
 end
+
+local wt = numWeightPre - numPrunedConvTotal - numPrunedFcTotal
+print('... # of pruned synapses in convolution layers: ' .. numPrunedConvTotal)
+print('... # of pruned synapses in fully-connected layers: ' .. numPrunedFcTotal)
+print('... # of remaining synapses in total: ' .. wt)
+print('... (# of synapses in original network: ' .. numWeightPre .. ')')
 
 -- Store only pruned weights
 prunedConvLayerSet = {}
@@ -427,59 +456,21 @@ for i = 1, #FcLayerSet do
 	prunedFcLayerSet[#prunedFcLayerSet+1] = wP[lal]
 end
 
+-- Save files
+print('\n------------------------------------------------')
+print('>> Model, Weight, Accuracy, and Loss tensors are saved.')
 
-
--- convert cudatensor to double tensor to save it in .mat format
---[[
-if opt.model == 'lenet' then
-	conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
-	conv2 = torch.cat(weight[3]:view(16*6*3*3), weight[4], 1):double()
-	fc1 = torch.cat(weight[5]:view(120*400), weight[6], 1):double()
-	fc2 = torch.cat(weight[7]:view(84*120), weight[8], 1):double()
-	fc3 = torch.cat(weight[9]:view(10*84), weight[10], 1):double()
-else
-	conv1 = torch.cat(weight[1]:view(6*1*5*5), weight[2], 1):double()
-	conv2 = torch.cat(weight[3]:view(3*6*3*3), weight[4], 1):double()
-	fc1 = torch.cat(weight[5]:view(30*75), weight[6], 1):double()
-	fc2 = torch.cat(weight[7]:view(10*30), weight[8], 1):double()
-end
-]]--
-
--- Save retrained model and data
 torch.save(filename.ModelRetrain, model)
+matio.save(filename.NumWeights, {numWeight = torch.Tensor(numWeight)})
 matio.save(filename.WeightRetrain, {Conv1 = prunedConvLayerSet[1]:double(), 
 									Conv2 = prunedConvLayerSet[2]:double(), 
 									Fc1 = prunedFcLayerSet[1]:double(), 
 									Fc2 = prunedFcLayerSet[2]:double(), 
 									Fc3 = prunedFcLayerSet[3]:double()} )
-
-
-print('... time consumed for Retraining = ' .. (timeRetrain) .. 's')
-print("... counting memory after Pretraining")
-print(optnet.countUsedMemory(model))
-print("... Evaluation after Pretraining")
-local AccTestRetrain = evaluation(testset)
-print(string.format('	Test Accuracy after Pretraining	: %.4f', AccTestRetrain*100))
-
-
-
-------------------------------------------------------------------------
--- Saving the model
-------------------------------------------------------------------------
-print('\n------------------------------------------------')
-print('>> Model, Weight, Accuracy, and Loss tensors are svaed.')
-
-torch.save(filename.ModelRetrain, model)
 matio.save(filename.AccLoss, {
 								LossPretrain = torch.Tensor(LossTablePretrain),
 								AccTrainPretrain = torch.Tensor(AccTableTrainPretrain),
 								AccValidPretrain = torch.Tensor(AccTableValidPretrain),
 								AccTestPretrain = AccTestPretrain*100,
-
-								LossRetrain = torch.Tensor(LossTableRetrain),
-								AccTrainRetrain = torch.Tensor(AccTableTrainRetrain),
-								AccValidRetrain = torch.Tensor(AccTableValidRetrain),
-								AccTestRetrain = AccTestRetrain*100
+								AccTestRetrain = torch.Tensor(AccTableTestRetrain)
 								})
-
-
