@@ -19,10 +19,10 @@ opt.cuda = false
 opt.saveDir = 'model/'
 opt.model = 'load' -- 'cnnA' 'cnnB' or 'mlp' for debugging
 opt.batchsize = 100 -- mini-batch size (1=pure stochastic)
-opt.max_iters = 50
+opt.max_iters = 80
 print(opt)
 sgd_params = {
-   learningRate = 1e-3,
+   learningRate = 1e-3* 2,
    weightDecay = 1e-3,
 }
 if opt.saveDir then
@@ -129,14 +129,14 @@ if opt.cuda then
 end
 
 sps = model:findModules('SpatialConvolutionWithMask')
-sps[1]:prune_ratio(100)
+--sps[1]:prune_sensitivity(0.98)
 --print(sps[1].weight)
 --print(sps[1].bias)
-sps[2]:prune_ratio(100)
+--sps[2]:prune_sensitivity(0.9)
 lins = model:findModules('LinearWithMask')
---lins[1]:prune_ratio(50)
---lins[2]:prune_ratio(50)
---lins[3]:prune_ratio(50)
+--lins[1]:prune_sensitivity(0.9)
+--lins[2]:prune_sensitivity(0.9)
+lins[3]:prune_sensitivity(0.98)
 
 -----------------------------------------------------------------------
 -- Trainer

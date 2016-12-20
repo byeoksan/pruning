@@ -18,7 +18,7 @@ opt.cuda = false
 opt.saveDir = 'model/'
 opt.model = 'lenet' -- 'cnnA' 'cnnB' or 'mlp' or 'lenet' for debugging
 opt.batchsize = 100 -- mini-batch size (1=pure stochastic)
-opt.max_iters = 100
+opt.max_iters = 50
 print(opt)
 sgd_params = {
    learningRate = 1e-2,
@@ -150,6 +150,8 @@ if opt.cuda then
 end
 
 
+sps = model:findModules('SpatialConvolutionWithMask')
+lns = model:findModules('LinearWithMask')
 -----------------------------------------------------------------------
 -- Trainer
 -----------------------------------------------------------------------
@@ -166,9 +168,16 @@ function step(batch_size)
     batch_size = batch_size or 200
     
     model:training()
+    sps[1]:clone_weight()
+    sps[2]:clone_weight()
+    lns[1]:clone_weight()
+    lns[2]:clone_weight()
+    lns[3]:clone_weight()
+    
     for t = 1,trainset.size,batch_size do
         -- setup inputs and targets for this mini-batch
         xlua.progress(t, trainset.size)
+        
         local size = math.min(t + batch_size - 1, trainset.size) - t
         local inputs = torch.Tensor(size, 28, 28)
         local targets = torch.Tensor(size)
@@ -202,13 +211,20 @@ function step(batch_size)
         _, fs = optim.sgd(feval, x, sgd_params)
         -- fs is a table containing value of the loss function
         -- (just 1 value for the SGD optimization)
+        
         count = count + 1
         current_loss = current_loss + fs[1]
     end
-
+    sps[1]:weight_diff_square()
+    sps[2]:weight_diff_square()
+    lns[1]:weight_diff_square()
+    lns[2]:weight_diff_square()
+    lns[3]:weight_diff_square()
+    
     -- normalize loss
     return current_loss / count
 end
+
 
 function evaluation(dataset, batch_size)
     local count = 0
@@ -261,7 +277,20 @@ for i = 1,opt.max_iters do
     end
     last_accuracy = accuracy
 end
+sps[1]:cal_sensitivity()
+sps[2]:cal_sensitivity()
+lns[1]:cal_sensitivity()
+lns[2]:cal_sensitivity()
+lns[3]:cal_sensitivity()
 
+--[[
+for i = 1,2 do
+    print(sps[i].sensitivity:size())
+end
+for i = 1,3 do
+    print(lns[i].sensitivity:size())
+end
+--]]
 conv_nodes = model:findModules('nn.SpatialConvolution')
 print(conv_nodes)
 for i = 1, #conv_nodes do
