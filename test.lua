@@ -61,7 +61,6 @@ function M.main(arg)
         io.stderr:write('\n')
         return
     end
-    model_params.model:add(nn.LogSoftMax())
 
     if config_params.debug then
         print('=== Testing Parameters ===')

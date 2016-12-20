@@ -31,6 +31,7 @@ local function _cnnA()
     model:add(view(11*11*6))
     model:add(linear(11*11*6, 40))
     model:add(linear(40, 10))
+    model:add(nn.LogSoftMax())
     return model
 end
 
@@ -44,6 +45,7 @@ local function _cnnB()
     model:add(view(5*5*3))
     model:add(linear(5*5*3, 30))
     model:add(linear(30, 10))
+    model:add(nn.LogSoftMax())
     return model
 end
 
@@ -62,6 +64,7 @@ local function _lenet()
     model:add(linear(120, 84))
     model:add(relu(true))
     model:add(linear(84, 10))
+    model:add(nn.LogSoftMax())
     return model
 end
 

@@ -138,7 +138,6 @@ function M.main(arg)
         return
     end
 
-    model_params.model:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
 
     if config_params.debug then
