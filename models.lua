@@ -1,19 +1,24 @@
 #!/usr/bin/env th
 
 require 'nn'
-require 'layers.SpatialConvolutionWithMask'
-require 'layers.LinearWithMask'
 
 local M = {}
 
---local conv = nn.SpatialConvolution
+local prunables = List{
+    'SpatialConvolutionWithMask',
+    'LinearWithMask',
+}
+
+for layer in prunables:iterate() do
+    require('layers.' .. layer)
+end
+
 local conv = SpatialConvolutionWithMask
 local maxpool = nn.SpatialMaxPooling
 local avgpool = nn.SpatialAveragePooling
 local relu = nn.ReLU
 local norm = nn.SpatialCrossMapLRN
 local view = nn.View
---local linear = nn.Linear
 local linear = LinearWithMask
 local dropout = nn.Dropout
 
@@ -72,6 +77,17 @@ end
 
 function M.restore(path)
     return torch.load(path)
+end
+
+function M.get_prunables(model)
+    local prunable_layers = List:new{}
+    for i, layer in ipairs(model.modules) do
+        if prunables:count(torch.typename(layer)) > 0 then
+            prunable_layers:append(layer)
+        end
+    end
+
+    return prunable_layers
 end
 
 return M
