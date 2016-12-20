@@ -82,12 +82,30 @@ end
 function M.get_prunables(model)
     local prunable_layers = List:new{}
     for i, layer in ipairs(model.modules) do
-        if prunables:count(torch.typename(layer)) > 0 then
+        if prunables:contains(torch.typename(layer)) then
             prunable_layers:append(layer)
         end
     end
 
     return prunable_layers
+end
+
+function M.get_prunables_by_type(model)
+    local prunable_map = OrderedMap()
+
+    cnt = 0
+    for i, layer in ipairs(model.modules) do
+        local typename = torch.typename(layer)
+        if prunables:contains(typename) then
+            cnt = cnt + 1
+            if not prunable_map:keys():contains(typename) then
+                prunable_map[typename] = List{}
+            end
+            prunable_map[typename]:append(List{layer, cnt})
+        end
+    end
+
+    return prunable_map
 end
 
 return M
