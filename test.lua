@@ -42,6 +42,25 @@ function M.evaluate(model, data, labels, config_params)
     return correct / data_size
 end
 
+function M.createTestCmdLine()
+    cmd = torch.CmdLine()
+    cmd:option('-model', '', 'Trained model to test')
+    cmd:option('-cuda', false, 'Whether to use cuda')
+    cmd:option('-batch', 128, 'Batch size')
+    cmd:option('-progress', false, 'True to show progress')
+    cmd:option('-debug', false, 'True for debugging')
+    return cmd
+end
+
+function M.parsedCmdLineToTestParams(parsed)
+    return {
+        cuda = parsed.cuda,
+        batch = parsed.batch,
+        progress = parsed.progress,
+        debug = parsed.debug,
+    }
+end
+
 function M.main(arg)
     -- arg: command line arguments
     local models = require('models')
@@ -66,13 +85,8 @@ function M.main(arg)
     end
 
     model:add(nn.LogSoftMax())
-    config_params = {
-        cuda = params.cuda,
-        batch = params.batch,
-        progress = params.progress,
-        debug = params.debug,
-    }
 
+    config_params = M.parsedCmdLineToTestParams(params)
     if config_params.debug then
         print('=== Testing Parameters ===')
         print(config_params)

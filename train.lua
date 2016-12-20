@@ -4,6 +4,7 @@ require 'paths'
 require 'nn'
 require 'optim'
 
+local util = require('util')
 local progress = require('progress')
 local dataset = require('dataset')
 local test = require('test')
@@ -87,17 +88,10 @@ function M.train(model, criterion, data, opt_params, config_params)
     end
 end
 
-function M.main(arg)
-    -- arg: command line arguments
-    local models = require('models')
-
-    local cmd = torch.CmdLine()
+function M.createTrainCmdLine()
+    cmd = torch.CmdLine()
     cmd:option('-modelType', '', 'Model to learn (if model is specified, this is ignored')
     cmd:option('-model', '', 'Model to resume')
-    cmd:option('-learningRate', 0.01, 'Initial learning rate')
-    cmd:option('-learningRateDecay', 1e-4, 'Learning rate decay')
-    cmd:option('-weightDecay', 0.0005, 'Weight decay')
-    cmd:option('-momentum', 0.9, 'Learning momentum')
     cmd:option('-cuda', false, 'Whether to use cuda')
     cmd:option('-batch', 128, 'Batch size')
     cmd:option('-epochs', 20, 'Epoches to run')
@@ -105,6 +99,31 @@ function M.main(arg)
     cmd:option('-progress', false, 'True to show progress')
     cmd:option('-saveName', '', 'Filename when saving the model. If not specified, modelType or model will be used')
     cmd:option('-debug', false, 'True for debugging')
+    return cmd
+end
+
+function M.parsedCmdLineToTrainParams(parsed)
+    return {
+        cuda = parsed.cuda,
+        batch = parsed.batch,
+        epochs = parsed.epochs,
+        saveEpoch = parsed.saveEpoch,
+        saveName = parsed.saveName,
+        progress = parsed.progress,
+        debug = parsed.debug,
+    }
+end
+
+function M.main(arg)
+    -- arg: command line arguments
+    local models = require('models')
+
+    local cmd = torch.CmdLine()
+    cmd:option('-modelType', '', 'Model to learn (if model is specified, this is ignored')
+    cmd:option('-model', '', 'Model to resume')
+
+    cmd = util.mergeCmdLineOptions(cmd, util.createOptimCmdLine())
+    cmd = util.mergeCmdLineOptions(cmd, M.createTrainCmdLine())
 
     local params = cmd:parse(arg or {})
 
@@ -137,22 +156,8 @@ function M.main(arg)
     model:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
 
-    opt_params = {
-        learningRate = params.learningRate,
-        learningRateDecay = params.learningRateDecay,
-        weightDecay = params.weightDecay,
-        momentum = params.momentum,
-    }
-
-    config_params = {
-        cuda = params.cuda,
-        batch = params.batch,
-        epochs = params.epochs,
-        saveEpoch = params.saveEpoch,
-        saveName = params.saveName,
-        progress = params.progress,
-        debug = params.debug,
-    }
+    opt_params = util.parsedCmdLineToOptimParams(params)
+    config_params = M.parsedCmdLineToTrainParams(params)
 
     if config_params.debug then
         print('=== Training Parameters ===')
