@@ -11,6 +11,7 @@ local test = require('test')
 local M = {}
 
 local function _step(model, criterion, data, opt_params, config_params)
+	--TODO: fix step function to fit cifar dataset also
     model:training()
     local batch = config_params.batch or 128
     local shape = data.train.data:size()
@@ -93,6 +94,7 @@ function M.main(arg)
 
     local cmd = torch.CmdLine()
     cmd:option('-modelType', '', 'Model to learn (if model is specified, this is ignored')
+	cmd:option('-nClass', 0, 'Number of class')
     cmd:option('-model', '', 'Model to resume')
     cmd:option('-learningRate', 0.01, 'Initial learning rate')
     cmd:option('-learningRateDecay', 1e-4, 'Learning rate decay')
@@ -123,7 +125,7 @@ function M.main(arg)
 
     elseif params.modelType ~= '' then
         -- Sanity check
-        model = models.load(params.modelType, 5)
+        model = models.load(params.modelType, params.nClass)
 
         if params.saveName == '' then
             params.saveName = params.modelType
@@ -164,7 +166,12 @@ function M.main(arg)
     end
 
     -- Load the data
-    local data = dataset.load()
+	if params.nClass ~= 0 then
+		data = dataset.load_cifar(params.nClass)
+	else
+	    data = dataset.load()
+	end
+
     if config_params.debug then
         print(data)
     end

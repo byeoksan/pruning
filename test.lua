@@ -48,6 +48,7 @@ function M.main(arg)
 
     local cmd = torch.CmdLine()
     cmd:option('-model', '', 'Trained model to test')
+	cmd:option('-nClass', 0, 'Number of class')
     cmd:option('-cuda', false, 'Whether to use cuda')
     cmd:option('-batch', 128, 'Batch size')
     cmd:option('-progress', false, 'True to show progress')
@@ -80,7 +81,11 @@ function M.main(arg)
         print(model)
     end
 
-    local data = dataset.load()
+	if params.nClass ~= 0 then
+		local data = dataset.load_cifar(params.nClass)
+	else
+    	local data = dataset.load()
+	end
     if config_params.debug then
         print(data)
     end
