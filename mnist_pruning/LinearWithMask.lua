@@ -11,8 +11,6 @@ function LinearWithMask:__init(inputSize, outputSize, bias)
    if self.bias and not self.biasMask then
        self.biasMask = torch.DoubleTensor(self.bias:size()):fill(1)
    end
-   self.weight_init = self.weight
-  -- print(self.weight_init)
 end
 
 function LinearWithMask:noBias()
@@ -59,85 +57,93 @@ function LinearWithMask:applyBiasMask()
     end
 end
 
-function LinearWithMask:prune(qfactor)
+function LinearWithMask:get_alive_weights()
     local alive_weights = self.weight[self.weightMask:eq(1)]
-    if self.bias then
-        local alive_bias = self.bias[self.biasMask:eq(1)]
-
-        if alive_bias:dim() > 0 then
-            alive_weights = alive_weights:cat(alive_bias)
-        end
+    if alive_weights:dim() == 0 then
+        return nil
     end
 
-    local mean = alive_weights:mean()
-    local std = alive_weights:std()
-    local threshold = torch.abs(qfactor) * std
+    return alive_weights
+end
 
-    local new_weight_mask = torch.abs(self.weight - mean):ge(threshold)
-    self.weightMask[new_weight_mask:eq(0)] = 0
+function LinearWithMask:get_alive_biases()
+    if not self.bias then
+        return nil
+    end
+
+    local alive_biases = self.bias[self.biasMask:eq(1)]
+    if alive_biases:dim() == 0 then
+        return nil
+    end
+
+    return alive_biases
+end
+
+function LinearWithMask:get_alive()
+    local alive_weights = self:get_alive_weights()
+    local alive_biases = self:get_alive_biases()
+    local alive
+
+    if alive_weights ~= nil and alive_biases ~= nil then
+        alive = alive_weights:cat(alive_biases)
+    elseif alive_biases == nil then
+        alive = alive_weights
+    elseif alive_weights == nil then
+        alive = alive_biases
+    else
+        return nil
+    end
+
+    return alive -- 1-D
+end
+
+function LinearWithMask:prune_range(lower, upper)
+    if lower > upper then
+        lower, upper = upper, lower
+    end
+
+    local new_weight_mask = torch.cmul(self.weight:ge(lower), self.weight:le(upper))
+    self.weightMask[new_weight_mask:eq(1)] = 0
     self:applyWeightMask()
 
     if self.bias then
-        local new_bias_mask = torch.abs(self.bias - mean):ge(threshold)
-        self.biasMask[new_bias_mask:eq(0)] = 0
+        local new_bias_mask = torch.cmul(self.bias:ge(lower), self.bias:le(upper))
+        self.biasMask[new_bias_mask:eq(1)] = 0
         self:applyBiasMask()
     end
 end
 
-function find_threshold(input_weight, qfactor)
-    total_size = 1
-    weight_size = input_weight:size()
-    for i = 1, weight_size:size() do
-        total_size = total_size * weight_size[i] 
+function LinearWithMask:prune_qfactor(qfactor)
+    local alive = self:get_alive()
+    if alive == nil then
+        return
     end
-    weight_abs = torch.abs(input_weight)
-    resize_weight_abs = weight_abs:view(total_size)
-    sort_weight, i = torch.sort(resize_weight_abs)
-    prune_index = torch.ceil(qfactor/100 * total_size)
-    local threshold = sort_weight[prune_index]
-    return threshold
+
+    local mean = alive:mean()
+    local std = alive:std()
+    local range = torch.abs(qfactor) * std
+
+    lower, upper = mean - range, mean + range
+    self:prune_range(lower, upper)
 end
 
---debug function
---[[
-function count_one(input_weight)
-    local input_size = input_weight:size()
-    local count = 0
-    print (input_size)
-    for i = 1, input_size[1] do
-        if input_weight[i] == 1 then
-            count  = count +1
-        end
+function LinearWithMask:prune_ratio(ratio)
+    if ratio > 1 or ratio < 0 then
+        return
     end
-    print (count)
+
+    local alive = self:get_alive()
+    alive = alive:abs():sort()
+    local idx = math.floor(alive:size(1) * ratio)
+
+    if idx == 0 then
+        return
+    end
+
+    local range = alive[idx]
+    lower, upper = -range, range
+    self:prune_range(lower, upper)
 end
---]]
-
-function LinearWithMask:prune_ratio(qfactor)
-   
-    local alive_weights = self.weight[self.weightMask:eq(1)]
-    if self.bias then
-        local alive_bias = self.bias[self.biasMask:eq(1)]
-        
-        if alive_bias:dim() > 0 then
-            alive_weights = alive_weights:cat(alive_bias)
-        end
-    end
-    local threshold_weight = find_threshold(self.weight, qfactor)
-    local threshold_bias = find_threshold(self.bias, qfactor)
-
-    local new_weight_mask = torch.abs(self.weight):gt(threshold_weight)
-    self.weightMask[new_weight_mask:eq(0)] = 0
-    self:applyWeightMask()
-
-    if self.bias then
-        local new_bias_mask = torch.abs(self.bias):gt(threshold_bias)
-        self.biasMask[new_bias_mask:eq(0)] = 0
-        self:applyBiasMask()
-    end
-end
-
-
 
 function LinearWithMask:updateOutput(input)
     return parent.updateOutput(self, input)
