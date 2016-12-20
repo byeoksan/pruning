@@ -11,13 +11,18 @@ local test = require('test')
 
 local M = {}
 
-local function _step(model, criterion, data, optim_params, config_params)
+local function _step(model, data, optim_params, config_params)
     model:training()
+    local criterion = nn.ClassNLLCriterion()
     local batch = config_params.batch or 128
     local shape = data.train.data:size()
     local data_size = shape[1]
     local perm = torch.randperm(data_size):long()
     local loss = 0
+
+    if config_params.cuda then
+        criterion:cuda()
+    end
 
     local count = 0
     for b = 1, data_size, batch do
@@ -56,25 +61,27 @@ local function _step(model, criterion, data, optim_params, config_params)
     return loss / count
 end
 
-function M.train(model, criterion, data, optim_params, train_params, config_params)
+function M.train(model, data, optim_params, train_params, config_params)
     local saveEpoch = train_params.saveEpoch or 0
     local saveName = train_params.saveName
     local epochs = train_params.epochs or 10
 
     for epoch = 1, epochs do
         print(string.format('Training Epoch %d...', epoch))
-        local loss = _step(model, criterion, data, optim_params, config_params)
+        local loss = _step(model, data, optim_params, config_params)
         print(string.format('\tTrain loss: %f', loss))
 
         -- Intermmediate Save
-        if (saveEpoch > 0 and (epoch % saveEpoch) == 0) or epoch == epochs then
-            local name = string.format('%s_%d.t7', saveName, epoch)
-            if config_params.cuda then
-                model:double()
-                torch.save(name, model)
-                model:cuda()
-            else
-                torch.save(name, model)
+        if not train_params.nosave then
+            if (saveEpoch > 0 and (epoch % saveEpoch) == 0) or epoch == epochs then
+                local name = string.format('%s_%d.t7', saveName, epoch)
+                if config_params.cuda then
+                    model:double()
+                    torch.save(name, model)
+                    model:cuda()
+                else
+                    torch.save(name, model)
+                end
             end
         end
 
@@ -93,6 +100,7 @@ function M.createTrainCmdLine()
     cmd:option('-epochs', 20, 'Epoches to run')
     cmd:option('-saveEpoch', 0, 'Period to save model during training')
     cmd:option('-saveName', '', 'Filename when saving the model. If not specified, modelType or model will be used')
+    cmd:option('-nosave', false, 'True if you do not want to save the model')
     return cmd
 end
 
@@ -101,6 +109,7 @@ function M.parsedCmdLineToTrainParams(parsed)
         epochs = parsed.epochs,
         saveEpoch = parsed.saveEpoch,
         saveName = parsed.saveName,
+        nosave = parsed.nosave,
     }
 end
 
@@ -138,8 +147,6 @@ function M.main(arg)
         return
     end
 
-    local criterion = nn.ClassNLLCriterion()
-
     if config_params.debug then
         print('=== Training Parameters ===')
         print(train_params)
@@ -155,7 +162,6 @@ function M.main(arg)
     if config_params.cuda then
         require 'cunn'
         model_params.model:cuda()
-        criterion:cuda()
         data_params.data.train.data = data_params.data.train.data:cuda()
         data_params.data.train.labels = data_params.data.train.labels:cuda()
         data_params.data.validate.data = data_params.data.validate.data:cuda()
@@ -164,7 +170,7 @@ function M.main(arg)
         data_params.data.test.labels = data_params.data.test.labels:cuda()
     end
 
-    M.train(model_params.model, criterion, data_params.data, optim_params, train_params, config_params)
+    M.train(model_params.model, data_params.data, optim_params, train_params, config_params)
 end
 
 return M
