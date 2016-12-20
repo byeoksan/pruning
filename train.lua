@@ -11,7 +11,7 @@ local test = require('test')
 
 local M = {}
 
-local function _step(model, criterion, data, opt_params, config_params)
+local function _step(model, criterion, data, optim_params, config_params)
     model:training()
     local batch = config_params.batch or 128
     local shape = data.train.data:size()
@@ -46,7 +46,7 @@ local function _step(model, criterion, data, opt_params, config_params)
             return loss, gradWeight
         end
 
-        _, fs = optim.sgd(eval, weight, opt_params)
+        _, fs = optim.sgd(eval, weight, optim_params)
         loss = loss + fs[1]
 
         count = count + 1
@@ -56,14 +56,14 @@ local function _step(model, criterion, data, opt_params, config_params)
     return loss / count
 end
 
-function M.train(model, criterion, data, opt_params, config_params)
-    local saveEpoch = config_params.saveEpoch or 0
-    local saveName = config_params.saveName
-    local epochs = config_params.epochs or 10
+function M.train(model, criterion, data, optim_params, train_params, config_params)
+    local saveEpoch = train_params.saveEpoch or 0
+    local saveName = train_params.saveName
+    local epochs = train_params.epochs or 10
 
     for epoch = 1, epochs do
         print(string.format('Training Epoch %d...', epoch))
-        local loss = _step(model, criterion, data, opt_params, config_params)
+        local loss = _step(model, criterion, data, optim_params, config_params)
         print(string.format('\tTrain loss: %f', loss))
 
         -- Intermmediate Save
@@ -90,27 +90,17 @@ end
 
 function M.createTrainCmdLine()
     cmd = torch.CmdLine()
-    cmd:option('-modelType', '', 'Model to learn (if model is specified, this is ignored')
-    cmd:option('-model', '', 'Model to resume')
-    cmd:option('-cuda', false, 'Whether to use cuda')
-    cmd:option('-batch', 128, 'Batch size')
     cmd:option('-epochs', 20, 'Epoches to run')
     cmd:option('-saveEpoch', 0, 'Period to save model during training')
-    cmd:option('-progress', false, 'True to show progress')
     cmd:option('-saveName', '', 'Filename when saving the model. If not specified, modelType or model will be used')
-    cmd:option('-debug', false, 'True for debugging')
     return cmd
 end
 
 function M.parsedCmdLineToTrainParams(parsed)
     return {
-        cuda = parsed.cuda,
-        batch = parsed.batch,
         epochs = parsed.epochs,
         saveEpoch = parsed.saveEpoch,
         saveName = parsed.saveName,
-        progress = parsed.progress,
-        debug = parsed.debug,
     }
 end
 
@@ -118,76 +108,64 @@ function M.main(arg)
     -- arg: command line arguments
     local models = require('models')
 
-    local cmd = torch.CmdLine()
-    cmd:option('-modelType', '', 'Model to learn (if model is specified, this is ignored')
-    cmd:option('-model', '', 'Model to resume')
-
+    local cmd = util.createModelCmdLine(true)
     cmd = util.mergeCmdLineOptions(cmd, util.createOptimCmdLine())
     cmd = util.mergeCmdLineOptions(cmd, M.createTrainCmdLine())
+    cmd = util.mergeCmdLineOptions(cmd, util.createConfigCmdLine())
+    cmd = util.mergeCmdLineOptions(cmd, dataset.createDataCmdLine())
 
-    local params = cmd:parse(arg or {})
-
-    -- Load the model
-    local model
-    if params.model ~= '' then
-        -- TODO: Sanity check and implement "restore"
-        model = models.restore(params.model)
-
-        local ext = paths.extname(params.model)
-        local path = paths.dirname(params.model)
-        local name = paths.basename(params.model, ext)
-        if params.saveName == '' then
-            params.saveName = paths.concat(path, name)
+    local parsed = cmd:parse(arg or {})
+    if parsed.saveName == '' then
+        if parsed.model ~= '' then
+            local ext = paths.extname(parsed.model)
+            local path = paths.dirname(parsed.model)
+            local name = paths.basename(parsed.model, ext)
+            parsed.saveName = paths.concat(path, name)
+        else
+            parsed.saveName = parsed.modelType
         end
+    end
 
-    elseif params.modelType ~= '' then
-        -- Sanity check
-        model = models.load(params.modelType, 5)
+    local model_params = util.parsedCmdLineToModelParams(parsed)
+    local optim_params = util.parsedCmdLineToOptimParams(parsed)
+    local train_params = M.parsedCmdLineToTrainParams(parsed)
+    local data_params = dataset.parsedCmdLineToDataParams(parsed)
+    local config_params = util.parsedCmdLineToConfigParams(parsed)
 
-        if params.saveName == '' then
-            params.saveName = params.modelType
-        end
-    else
+    if not model_params.model then
         io.stderr:write(cmd:help())
         io.stderr:write('\n')
         return
     end
 
-    model:add(nn.LogSoftMax())
+    model_params.model:add(nn.LogSoftMax())
     local criterion = nn.ClassNLLCriterion()
-
-    opt_params = util.parsedCmdLineToOptimParams(params)
-    config_params = M.parsedCmdLineToTrainParams(params)
 
     if config_params.debug then
         print('=== Training Parameters ===')
-        print(config_params)
+        print(train_params)
         print('=== Optimization Parameters ===')
-        print(opt_params)
+        print(optim_params)
         print('=== Model ===')
-        print(model)
-    end
-
-    -- Load the data
-    local data = dataset.load()
-    if config_params.debug then
-        print(data)
+        print(model_params.model)
+        print(string.format('=== Data: %s ===', train_params.data))
+        print(data_params.data)
     end
 
     -- Cuda-ify
-    if params.cuda then
+    if config_params.cuda then
         require 'cunn'
-        model:cuda()
+        model_params.model:cuda()
         criterion:cuda()
-        data.train.data = data.train.data:cuda()
-        data.train.labels = data.train.labels:cuda()
-        data.validate.data = data.validate.data:cuda()
-        data.validate.labels = data.validate.labels:cuda()
-        data.test.data = data.test.data:cuda()
-        data.test.labels = data.test.labels:cuda()
+        data_params.data.train.data = data_params.data.train.data:cuda()
+        data_params.data.train.labels = data_params.data.train.labels:cuda()
+        data_params.data.validate.data = data_params.data.validate.data:cuda()
+        data_params.data.validate.labels = data_params.data.validate.labels:cuda()
+        data_params.data.test.data = data_params.data.test.data:cuda()
+        data_params.data.test.labels = data_params.data.test.labels:cuda()
     end
 
-    M.train(model, criterion, data, opt_params, config_params)
+    M.train(model_params.model, criterion, data_params.data, optim_params, train_params, config_params)
 end
 
 return M

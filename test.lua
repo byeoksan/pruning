@@ -2,12 +2,12 @@
 
 local progress = require('progress')
 local dataset = require('dataset')
+local util = require('util')
 
 local M = {}
 
 function M.evaluate(model, data, labels, config_params)
     model:evaluate()
-    config_params = config_params or {}
     local shape = data:size()
     local data_size = shape[1]
     local batch = config_params.batch or 128
@@ -42,78 +42,51 @@ function M.evaluate(model, data, labels, config_params)
     return correct / data_size
 end
 
-function M.createTestCmdLine()
-    cmd = torch.CmdLine()
-    cmd:option('-model', '', 'Trained model to test')
-    cmd:option('-cuda', false, 'Whether to use cuda')
-    cmd:option('-batch', 128, 'Batch size')
-    cmd:option('-progress', false, 'True to show progress')
-    cmd:option('-debug', false, 'True for debugging')
-    return cmd
-end
-
-function M.parsedCmdLineToTestParams(parsed)
-    return {
-        cuda = parsed.cuda,
-        batch = parsed.batch,
-        progress = parsed.progress,
-        debug = parsed.debug,
-    }
-end
-
 function M.main(arg)
     -- arg: command line arguments
     local models = require('models')
 
-    local cmd = torch.CmdLine()
-    cmd:option('-model', '', 'Trained model to test')
-    cmd:option('-cuda', false, 'Whether to use cuda')
-    cmd:option('-batch', 128, 'Batch size')
-    cmd:option('-progress', false, 'True to show progress')
-    cmd:option('-debug', false, 'True for debugging')
+    local cmd = util.createModelCmdLine(false)
+    cmd = util.mergeCmdLineOptions(cmd, util.createConfigCmdLine())
+    cmd = util.mergeCmdLineOptions(cmd, dataset.createDataCmdLine())
 
-    local params = cmd:parse(arg or {})
+    local parsed = cmd:parse(arg or {})
 
-    -- Load the model
-    local model
-    if params.model == '' then
+    local model_params = util.parsedCmdLineToModelParams(parsed)
+    local config_params = util.parsedCmdLineToConfigParams(parsed)
+    local data_params = dataset.parsedCmdLineToDataParams(parsed)
+
+    if not model_params.model then
         io.stderr:write(cmd:help())
         io.stderr:write('\n')
         return
-    else
-        model = models.restore(params.model)
     end
+    model_params.model:add(nn.LogSoftMax())
 
-    model:add(nn.LogSoftMax())
-
-    config_params = M.parsedCmdLineToTestParams(params)
     if config_params.debug then
         print('=== Testing Parameters ===')
         print(config_params)
         print('=== Model ===')
-        print(model)
-    end
-
-    local data = dataset.load()
-    if config_params.debug then
-        print(data)
+        print(model_params.model)
+        print('=== Test Data ===')
+        print(data_params.data)
     end
 
     -- Cuda-ify
-    if params.cuda then
+    if config_params.cuda then
         require 'cunn'
-        model:cuda()
-        data.train.data = data.train.data:cuda()
-        data.train.labels = data.train.labels:cuda()
-        data.test.data = data.test.data:cuda()
-        data.test.labels = data.test.labels:cuda()
+        model_params.model:cuda()
+        data_params.data.train.data = data_params.data.train.data:cuda()
+        data_params.data.train.labels = data_params.data.train.labels:cuda()
+        data_params.data.test.data = data_params.data.test.data:cuda()
+        data_params.data.test.labels = data_params.data.test.labels:cuda()
     end
 
-    local train_accuracy = M.evaluate(model, data.train.data, data.train.labels, config_params)
+    local train_accuracy = M.evaluate(model_params.model, data_params.data.train.data, data_params.data.train.labels, config_params)
     print(string.format('Train Accuracy: %f', train_accuracy * 100))
-    local validate_accuracy = M.evaluate(model, data.validate.data, data.validate.labels, config_params)
+    local validate_accuracy = M.evaluate(model_params.model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
     print(string.format('validate Accuracy: %f', validate_accuracy * 100))
-    local test_accuracy = M.evaluate(model, data.test.data, data.test.labels, config_params)
+    local test_accuracy = M.evaluate(model_params.model, data_params.data.test.data, data_params.data.test.labels, config_params)
     print(string.format('Test Accuracy: %f', test_accuracy * 100))
 end
 

@@ -52,4 +52,16 @@ function M.load()
     return data
 end
 
+function M.createDataCmdLine()
+    local cmd = torch.CmdLine()
+    cmd:option('-data', 'mnist', 'Dataset to use (mnist, cifar-5, cifar-10)')
+    return cmd
+end
+
+function M.parsedCmdLineToDataParams(parsed)
+    return {
+        data = M.load(parsed.data)
+    }
+end
+
 return M
