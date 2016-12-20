@@ -55,7 +55,7 @@ local function _step(model, criterion, data, opt_params, config_params)
     return loss / count
 end
 
-local function _train(model, criterion, data, opt_params, config_params)
+function M.train(model, criterion, data, opt_params, config_params)
     local saveEpoch = config_params.saveEpoch or 0
     local saveName = config_params.saveName
     local epochs = config_params.epochs or 10
@@ -182,7 +182,7 @@ function M.main(arg)
         data.test.labels = data.test.labels:cuda()
     end
 
-    _train(model, criterion, data, opt_params, config_params)
+    M.train(model, criterion, data, opt_params, config_params)
 end
 
 return M
