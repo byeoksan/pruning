@@ -7,9 +7,10 @@ local M = {}
 
 function M.evaluate(model, data, labels, config_params)
     model:evaluate()
+    config_params = config_params or {}
     local shape = data:size()
     local data_size = shape[1]
-    local batch = config_params.batch
+    local batch = config_params.batch or 128
 
     local correct = 0
     for i = 1, data_size, batch do

@@ -12,7 +12,7 @@ local M = {}
 
 local function _step(model, criterion, data, opt_params, config_params)
     model:training()
-    local batch = config_params.batch
+    local batch = config_params.batch or 128
     local shape = data.train.data:size()
     local data_size = shape[1]
     local perm = torch.randperm(data_size):long()
@@ -56,16 +56,17 @@ local function _step(model, criterion, data, opt_params, config_params)
 end
 
 local function _train(model, criterion, data, opt_params, config_params)
-    local saveEpoch = config_params.saveEpoch
+    local saveEpoch = config_params.saveEpoch or 0
     local saveName = config_params.saveName
+    local epochs = config_params.epochs or 10
 
-    for epoch = 1, config_params.epochs do
+    for epoch = 1, epochs do
         print(string.format('Training Epoch %d...', epoch))
         local loss = _step(model, criterion, data, opt_params, config_params)
         print(string.format('\tTrain loss: %f', loss))
 
         -- Intermmediate Save
-        if (saveEpoch > 0 and (epoch % saveEpoch) == 0) or epoch == config_params.epochs then
+        if (saveEpoch > 0 and (epoch % saveEpoch) == 0) or epoch == epochs then
             local name = string.format('%s_%d.t7', saveName, epoch)
             if config_params.cuda then
                 model:double()
