@@ -11,7 +11,6 @@ local test = require('test')
 local M = {}
 
 local function _step(model, criterion, data, opt_params, config_params)
-	--TODO: fix step function to fit cifar dataset also
     model:training()
     local batch = config_params.batch or 128
     local shape = data.train.data:size()

@@ -37,6 +37,7 @@ function M.main(arg)
     cmd:option('-multiplier', '1', 'Multiplier...')
     cmd:option('-qFactor', '', 'QFactor...')
     cmd:option('-step', '1', 'step...')
+	cmd:option('-nClass', 0, 'Number of class')
     cmd:option('-model', '', 'Model to resume')
     cmd:option('-learningRate', 0.01, 'Initial learning rate')
     cmd:option('-learningRateDecay', 1e-4, 'Learning rate decay')
@@ -107,7 +108,11 @@ function M.main(arg)
     end
 
     -- Load the data
-    local data = dataset.load()
+	if params.nClass ~= 0 then
+		data = dataset.load_cifar(params.nClass)
+	else
+	    data = dataset.load()
+	end
     if config_params.debug then
         print(data)
     end
