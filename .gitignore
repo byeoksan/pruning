@@ -1,1 +1,4 @@
 *.t7
+!/recover_pruning/cifar/cifar-100-t7/*
+!/recover_pruning/cifar/cifar-10-t7/*
+!/recover_pruning/cifar/cifar-5-t7/*
