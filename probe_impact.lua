@@ -19,7 +19,7 @@ local function _probe(model, data, probe_params, config_params)
         end
 
         layer:stash()
-        for ratio = 0, 1, probe_params.interval do
+        for ratio = probe_params.low, probe_params.high, probe_params.interval do
             layer:pruneRatio(ratio)
 
             local acc = Map()
@@ -45,6 +45,8 @@ end
 function M.createProbeCmdLine()
     local cmd = torch.CmdLine()
     cmd:option('-interval', '0.05', 'Ratio interval')
+    cmd:option('-low', 0, 'Pruning percentage to start')
+    cmd:option('-high', 1, 'Pruning percentage to finish')
     cmd:option('-saveName', 'probe_result.t7', 'File name to store the result')
     return cmd
 end
@@ -53,6 +55,8 @@ function M.parsedCmdLineToProbeParams(parsed)
     return {
         interval = parsed.interval,
         saveName = parsed.saveName,
+        low = parsed.low,
+        high = parsed.high,
     }
 end
 
