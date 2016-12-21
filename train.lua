@@ -128,12 +128,14 @@ function M.train(model, data, optim_params, train_params, config_params)
         end
 
         -- Intermmediate Report
-        local train_accuracy = test.evaluate(model, data.train.data, data.train.labels, config_params)
-        print(string.format('\tTrain Accuracy: %f', train_accuracy * 100))
-        local validate_accuracy = test.evaluate(model, data.validate.data, data.validate.labels, config_params)
-        print(string.format('\tValidate Accuracy: %f', validate_accuracy * 100))
-        local test_accuracy = test.evaluate(model, data.test.data, data.test.labels, config_params)
-        print(string.format('\tTest Accuracy: %f', test_accuracy * 100))
+        if not train_params.notest then
+            local train_accuracy = test.evaluate(model, data.train.data, data.train.labels, config_params)
+            print(string.format('\tTrain Accuracy: %f', train_accuracy * 100))
+            local validate_accuracy = test.evaluate(model, data.validate.data, data.validate.labels, config_params)
+            print(string.format('\tValidate Accuracy: %f', validate_accuracy * 100))
+            local test_accuracy = test.evaluate(model, data.test.data, data.test.labels, config_params)
+            print(string.format('\tTest Accuracy: %f', test_accuracy * 100))
+        end
     end
 end
 
@@ -143,6 +145,7 @@ function M.createTrainCmdLine()
     cmd:option('-saveEpoch', 0, 'Period to save model during training')
     cmd:option('-saveName', '', 'Filename when saving the model. If not specified, modelType or model will be used')
     cmd:option('-nosave', false, 'True if you do not want to save the model')
+    cmd:option('-notest', false, 'True if you do not want to test')
     return cmd
 end
 
@@ -152,6 +155,7 @@ function M.parsedCmdLineToTrainParams(parsed)
         saveEpoch = parsed.saveEpoch,
         saveName = parsed.saveName,
         nosave = parsed.nosave,
+        notest = parsed.notest,
     }
 end
 

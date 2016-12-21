@@ -1,5 +1,6 @@
 #!/usr/bin/env th
 
+local matio = require('matio')
 local models = require('models')
 local train = require('train')
 local test = require('test')
@@ -14,6 +15,29 @@ local prune_methods = OrderedMap({
     {sensitivity = 'pruneSensitivity'},
 })
 
+local function _layer_summary(model)
+    local layers = models.get_prunables(model)
+    local summary = torch.Tensor(1, #layers, 4)
+    for i, layer in ipairs(layers) do
+        summary[1][i][1] = layer.weightMask:eq(0):sum()
+        summary[1][i][2] = layer.weightMask:eq(1):sum()
+        if layer.biasMask then
+            summary[1][i][3] = layer.biasMask:eq(0):sum()
+            summary[1][i][4] = layer.biasMask:eq(1):sum()
+        else
+            summary[1][i][3] = 0
+            summary[1][i][4] = 0
+        end
+    end
+
+    return summary
+end
+
+local function _acc_summary(acc_train ,acc_validate, acc_test)
+    local summary = torch.Tensor({{acc_train, acc_validate, acc_test}})
+    return summary
+end
+
 local function _pruneIndividual(model, prune_params, data_params, optim_params, train_params, config_params)
     local init = prune_params.init
     local mult = prune_params.mult
@@ -23,6 +47,17 @@ local function _pruneIndividual(model, prune_params, data_params, optim_params, 
     local current_factor = init:clone()
     local layers = models.get_prunables(model)
 
+    print(string.format('Before pruning'))
+    acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+    print(string.format('\tTrain Accuracy: %f', acc_train*100))
+    acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+    print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+    acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+    print(string.format('\tTest Accuracy: %f', acc_test*100))
+
+    local acc_summary = _acc_summary(acc_train, acc_validate, acc_test)
+    local layer_summary = _layer_summary(model)
+
     for index, layer in ipairs(layers) do
         for i = 1, step do
             local factor = current_factor[index]
@@ -31,16 +66,21 @@ local function _pruneIndividual(model, prune_params, data_params, optim_params, 
             current_factor[index] = factor * mult[index]
             if not prune_params.notrain then
                 train.train(model, data_params.data, optim_params, train_params, config_params)
-            else
-                local acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
-                print(string.format('\tTrain Accuracy: %f', acc_train*100))
-                local acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
-                print(string.format('\tValidate Accuracy: %f', acc_validate*100))
-                local acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
-                print(string.format('\tTest Accuracy: %f', acc_test*100))
             end
+
+            acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+            print(string.format('\tTrain Accuracy: %f', acc_train*100))
+            acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+            print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+            acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+            print(string.format('\tTest Accuracy: %f', acc_test*100))
+
+            acc_summary = acc_summary:cat(_acc_summary(acc_train, acc_validate, acc_test), 1)
+            layer_summary = layer_summary:cat(_layer_summary(model), 1)
         end
     end
+
+    matio.save(string.format('%s.mat', train_params.saveName), {acc_summary=acc_summary, layer_summary=layer_summary})
 end
 
 local function _pruneType(model, prune_params, data_params, optim_params, train_params, config_params)
@@ -51,6 +91,17 @@ local function _pruneType(model, prune_params, data_params, optim_params, train_
 
     local current_factor = init:clone()
     local layer_map = models.get_prunables_by_type(model)
+
+    print(string.format('Before pruning'))
+    acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+    print(string.format('\tTrain Accuracy: %f', acc_train*100))
+    acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+    print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+    acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+    print(string.format('\tTest Accuracy: %f', acc_test*100))
+
+    local acc_summary = _acc_summary(acc_train, acc_validate, acc_test)
+    local layer_summary = _layer_summary(model)
 
     for layer_type in layer_map:keys():iterate() do
         local layers_and_indices = layer_map[layer_type]
@@ -70,16 +121,21 @@ local function _pruneType(model, prune_params, data_params, optim_params, train_
             print(string.format('Iteration %d (%s)', i, layer_type))
             if not prune_params.notrain then
                 train.train(model, data_params.data, optim_params, train_params, config_params)
-            else
-                local acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
-                print(string.format('\tTrain Accuracy: %f', acc_train*100))
-                local acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
-                print(string.format('\tValidate Accuracy: %f', acc_validate*100))
-                local acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
-                print(string.format('\tTest Accuracy: %f', acc_test*100))
             end
+
+            local acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+            print(string.format('\tTrain Accuracy: %f', acc_train*100))
+            local acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+            print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+            local acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+            print(string.format('\tTest Accuracy: %f', acc_test*100))
+
+            acc_summary = acc_summary:cat(_acc_summary(acc_train, acc_validate, acc_test), 1)
+            layer_summary = layer_summary:cat(_layer_summary(model), 1)
         end
     end
+
+    matio.save(string.format('%s.mat', train_params.saveName), {acc_summary=acc_summary, layer_summary=layer_summary})
 end
 
 local function _pruneAll(model, prune_params, data_params, optim_params, train_params, config_params)
@@ -91,6 +147,17 @@ local function _pruneAll(model, prune_params, data_params, optim_params, train_p
     local current_factor = init:clone()
     local layers = models.get_prunables(model)
 
+    print(string.format('Before pruning'))
+    acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+    print(string.format('\tTrain Accuracy: %f', acc_train*100))
+    acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+    print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+    acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+    print(string.format('\tTest Accuracy: %f', acc_test*100))
+
+    local acc_summary = _acc_summary(acc_train, acc_validate, acc_test)
+    local layer_summary = _layer_summary(model)
+
     for i = 1, step do
         for index, layer in ipairs(layers) do
             local factor = current_factor[index]
@@ -101,15 +168,20 @@ local function _pruneAll(model, prune_params, data_params, optim_params, train_p
         print(string.format('Iteration %d (ALL)', i))
         if not prune_params.notrain then
             train.train(model, data_params.data, optim_params, train_params, config_params)
-        else
-            local acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
-            print(string.format('\tTrain Accuracy: %f', acc_train*100))
-            local acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
-            print(string.format('\tValidate Accuracy: %f', acc_validate*100))
-            local acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
-            print(string.format('\tTest Accuracy: %f', acc_test*100))
         end
+
+        local acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+        print(string.format('\tTrain Accuracy: %f', acc_train*100))
+        local acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+        print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+        local acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+        print(string.format('\tTest Accuracy: %f', acc_test*100))
+
+        acc_summary = acc_summary:cat(_acc_summary(acc_train, acc_validate, acc_test), 1)
+        layer_summary = layer_summary:cat(_layer_summary(model), 1)
     end
+
+    matio.save(string.format('%s.mat', train_params.saveName), {acc_summary=acc_summary, layer_summary=layer_summary})
 end
 
 local prune_function_by_group = OrderedMap({
@@ -157,6 +229,8 @@ function M.main(arg)
     local data_params = dataset.parsedCmdLineToDataParams(parsed)
     local train_params = train.parsedCmdLineToTrainParams(parsed)
     local optim_params = util.parsedCmdLineToOptimParams(parsed)
+
+    train_params.notest = true -- Don't want test in training
 
     if not model_params.model then
         io.stderr:write('Model should be specified\n')
