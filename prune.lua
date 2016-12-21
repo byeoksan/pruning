@@ -98,7 +98,7 @@ local function _pruneAll(model, prune_params, data_params, optim_params, train_p
             current_factor[index] = factor * mult[index]
         end
 
-        print(string.format('Iteration %d (ALL)'))
+        print(string.format('Iteration %d (ALL)', i))
         if not prune_params.notrain then
             train.train(model, data_params.data, optim_params, train_params, config_params)
         else
