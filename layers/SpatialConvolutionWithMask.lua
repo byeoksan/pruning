@@ -145,6 +145,45 @@ function SpatialConvolutionWithMask:pruneRatio(ratio)
     self:pruneRange(lower, upper)
 end
 
+function SpatialConvolutionWithMask:pruneSensitivity(ratio)
+    if ratio > 1 or ratio < 0 then
+        return
+    end
+
+    local ws = self.weightSensitivity
+    local bs = self.biasSensitivity
+
+    local sensitivities
+    if ws ~= nil and bs ~= nil then
+        sensitivities = ws:view(ws:nElement()):cat(bs:view(bs:nElement()))
+    elseif ws ~= nil then
+        sensitivities = ws:view(ws:nElement())
+    elseif bs ~= nil then
+        sensitivities = bs:view(bs:nElement())
+    else
+        return
+    end
+
+    local idx = math.floor(sensitivities:size(1) * ratio)
+
+    if idx == 0 then
+        return
+    end
+
+    local range = sensitivities[idx]
+    lower, upper = -range, range
+
+    local newWeightMask = torch.cmul(self.weightSensitivity:ge(lower), self.weightSensitivity:le(upper))
+    self.weightMask[newWeightMask:eq(1)] = 0
+    self:applyWeightMask()
+
+    if self.bias then
+        local newBiasMask = torch.cmul(self.biasSensitivity:ge(lower), self.biasSensitivity:le(upper))
+        self.biasMask[newBiasMask:eq(1)] = 0
+        self:applyBiasMask()
+    end
+end
+
 function SpatialConvolutionWithMask:stash()
     self.stashedWeight = self.weight:clone()
     self.stashedWeightMask = self.weightMask:clone()
@@ -167,6 +206,27 @@ function SpatialConvolutionWithMask:stashPop()
     if self.bias and self.stashedBias then
         self.bias:copy(self.stashedBias)
         self.biasMask:copy(self.stashedBiasMask)
+    end
+end
+
+function SpatialConvolutionWithMask:stashWeightDiff()
+    return self.weight - self.stashedWeight
+end
+
+function SpatialConvolutionWithMask:stashBiasDiff()
+    if self.bias then
+        return self.bias - self.stashedBias
+    end
+end
+
+function SpatialConvolutionWithMask:setSensitivity(weightSensitivity, biasSensitivity)
+    self.weightSensitivity = weightSensitivity:clone()
+    self.weightSensitivity:abs()
+    if biasSensitivity then
+        self.biasSensitivity = biasSensitivity:clone()
+        self.biasSensitivity:abs()
+    else
+        self.biasSensitivity = nil
     end
 end
 

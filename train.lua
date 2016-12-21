@@ -8,6 +8,7 @@ local util = require('util')
 local progress = require('progress')
 local dataset = require('dataset')
 local test = require('test')
+local models = require('models')
 
 local M = {}
 
@@ -61,15 +62,56 @@ local function _step(model, data, optim_params, config_params)
     return loss / count
 end
 
+local function _clone(x)
+    if x ~= nil then
+        return x:clone()
+    end
+end
+
 function M.train(model, data, optim_params, train_params, config_params)
     local saveEpoch = train_params.saveEpoch or 0
     local saveName = train_params.saveName
     local epochs = train_params.epochs or 10
 
+    local prunable_layers = models.get_prunables(model)
+    prunable_layers:foreachm('stash')
+    local weight_diff_accum = prunable_layers:mapm('stashWeightDiff')
+    local weight_diff_square_accum = weight_diff_accum:map(_clone)
+    local bias_diff_accum = prunable_layers:mapm('stashBiasDiff')
+    local bias_diff_square_accum = bias_diff_accum:map(_clone)
+    local epsilon = 1e-10
+
     for epoch = 1, epochs do
         print(string.format('Training Epoch %d...', epoch))
+
+        prunable_layers:foreachm('stash')
         local loss = _step(model, data, optim_params, config_params)
+        local weight_diff = prunable_layers:mapm('stashWeightDiff')
+        local bias_diff = prunable_layers:mapm('stashBiasDiff')
+        for i = 1, #prunable_layers do
+            weight_diff_accum[i]:add(weight_diff[i])
+            weight_diff_square_accum[i]:add(weight_diff[i]:pow(2))
+
+            if bias_diff_accum[i] ~= nil then
+                bias_diff_accum[i]:add(bias_diff[i])
+                bias_diff_square_accum[i]:add(bias_diff[i]:pow(2))
+            end
+        end
+
         print(string.format('\tTrain loss: %f', loss))
+
+        -- Intermmediate Sensitivity
+        for i, layer in ipairs(prunable_layers) do
+            local weightSensitivity = torch.cmul(weight_diff_square_accum[i], layer.weight)
+            weightSensitivity:cdiv(optim_params.learningRate * (weight_diff_accum[i] + epsilon)) -- Avoid division by zero
+
+            local biasSensitivity
+            if layer.bias then
+                biasSensitivity = torch.cmul(bias_diff_square_accum[i], layer.bias)
+                biasSensitivity:cdiv(optim_params.learningRate * (bias_diff_accum[i] + epsilon)) -- Avoid division by zero
+            end
+            layer:setSensitivity(weightSensitivity, biasSensitivity)
+        end
 
         -- Intermmediate Save
         if not train_params.nosave then
