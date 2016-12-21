@@ -43,9 +43,6 @@ function M.evaluate(model, data, labels, config_params)
 end
 
 function M.main(arg)
-    -- arg: command line arguments
-    local models = require('models')
-
     local cmd = util.createModelCmdLine(false)
     cmd = util.mergeCmdLineOptions(cmd, util.createConfigCmdLine())
     cmd = util.mergeCmdLineOptions(cmd, dataset.createDataCmdLine())

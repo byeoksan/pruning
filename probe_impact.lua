@@ -74,6 +74,18 @@ function M.main(arg)
         return
     end
 
+    -- Cuda-ify
+    if config_params.cuda then
+        require 'cunn'
+        model_params.model:cuda()
+        data_params.data.train.data = data_params.data.train.data:cuda()
+        data_params.data.train.labels = data_params.data.train.labels:cuda()
+        data_params.data.validate.data = data_params.data.validate.data:cuda()
+        data_params.data.validate.labels = data_params.data.validate.labels:cuda()
+        data_params.data.test.data = data_params.data.test.data:cuda()
+        data_params.data.test.labels = data_params.data.test.labels:cuda()
+    end
+
     _probe(model_params.model, data_params.data, probe_params, config_params)
 end
 
