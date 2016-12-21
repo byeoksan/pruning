@@ -164,23 +164,25 @@ function SpatialConvolutionWithMask:pruneSensitivity(ratio)
         return
     end
 
+    sensitivities = sensitivities:sort()
     local idx = math.floor(sensitivities:size(1) * ratio)
 
     if idx == 0 then
         return
     end
 
-    local range = sensitivities[idx]
-    lower, upper = -range, range
+    local upper = sensitivities[idx]
 
-    local newWeightMask = torch.cmul(self.weightSensitivity:ge(lower), self.weightSensitivity:le(upper))
+    local newWeightMask = self.weightSensitivity:le(upper)
     self.weightMask[newWeightMask:eq(1)] = 0
     self:applyWeightMask()
+    self.weightSensitivity[newWeightMask:eq(1)] = 0
 
     if self.bias then
-        local newBiasMask = torch.cmul(self.biasSensitivity:ge(lower), self.biasSensitivity:le(upper))
+        local newBiasMask = self.biasSensitivity:le(upper)
         self.biasMask[newBiasMask:eq(1)] = 0
         self:applyBiasMask()
+        self.biasSensitivity[newBiasMask:eq(1)] = 0
     end
 end
 
