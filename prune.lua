@@ -7,11 +7,11 @@ local util = require('util')
 
 local M = {}
 
-local prune_methods = Map{
-    qfactor = 'pruneQfactor',
-    ratio = 'pruneRatio',
-    sensitivity = 'pruneSensitivity',
-}
+local prune_methods = OrderedMap({
+    {qfactor = 'pruneQfactor'},
+    {ratio = 'pruneRatio'},
+    {sensitivity = 'pruneSensitivity'},
+})
 
 local function _pruneIndividual(model, prune_params, data_params, optim_params, train_params, config_params)
     local init = prune_params.init

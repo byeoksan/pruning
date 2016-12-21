@@ -170,12 +170,12 @@ local function _load_cifar100()
     return _load_cifar(100)
 end
 
-local load_functions = Map{
-    mnist = _load_mnist,
-    cifar5 = _load_cifar5,
-    cifar10 = _load_cifar10,
-    cifar100 = _load_cifar100,
-}
+local load_functions = OrderedMap({
+    {mnist = _load_mnist},
+    {cifar5 = _load_cifar5},
+    {cifar10 = _load_cifar10},
+    {cifar100 = _load_cifar100},
+})
 
 function M.createDataCmdLine()
     local cmd = torch.CmdLine()
