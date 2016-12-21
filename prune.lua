@@ -80,11 +80,11 @@ local function _pruneAll(model, prune_params, data_params, optim_params, train_p
     end
 end
 
-local prune_function_by_group = Map{
-    individual = _pruneIndividual,
-    type = _pruneType,
-    all = _pruneAll,
-}
+local prune_function_by_group = OrderedMap({
+    {individual = _pruneIndividual},
+    {type = _pruneType},
+    {all = _pruneAll},
+})
 
 function M.createPruneCmdLine()
     cmd = torch.CmdLine()
@@ -99,7 +99,7 @@ end
 function M.parsedCmdLineToPruneParams(parsed)
     return {
         method = parsed.method,
-        order = parsed.order,
+        group = parsed.group,
         init = util.csvToList(parsed.init),
         mult = util.csvToList(parsed.mult),
         stepIter = parsed.stepIter,
