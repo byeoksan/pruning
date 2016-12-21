@@ -2,6 +2,7 @@
 
 local models = require('models')
 local train = require('train')
+local test = require('test')
 local dataset = require('dataset')
 local util = require('util')
 
@@ -25,9 +26,19 @@ local function _pruneIndividual(model, prune_params, data_params, optim_params, 
     for index, layer in ipairs(layers) do
         for i = 1, step do
             local factor = current_factor[index]
+            print(string.format('Iteration %d (%s, factor:%s)', i, layer, factor))
             layer[prune_methods[method]](layer, factor)
             current_factor[index] = factor * mult[index]
-            train.train(model, data_params.data, optim_params, train_params, config_params)
+            if not prune_params.notrain then
+                train.train(model, data_params.data, optim_params, train_params, config_params)
+            else
+                local acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+                print(string.format('\tTrain Accuracy: %f', acc_train*100))
+                local acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+                print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+                local acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+                print(string.format('\tTest Accuracy: %f', acc_test*100))
+            end
         end
     end
 end
@@ -56,7 +67,17 @@ local function _pruneType(model, prune_params, data_params, optim_params, train_
                 current_factor[index] = factor * mult[index]
             end
 
-            train.train(model, data_params.data, optim_params, train_params, config_params)
+            print(string.format('Iteration %d (%s)', i, layer_type))
+            if not prune_params.notrain then
+                train.train(model, data_params.data, optim_params, train_params, config_params)
+            else
+                local acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+                print(string.format('\tTrain Accuracy: %f', acc_train*100))
+                local acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+                print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+                local acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+                print(string.format('\tTest Accuracy: %f', acc_test*100))
+            end
         end
     end
 end
@@ -76,7 +97,18 @@ local function _pruneAll(model, prune_params, data_params, optim_params, train_p
             layer[prune_methods[method]](layer, factor)
             current_factor[index] = factor * mult[index]
         end
-        train.train(model, data_params.data, optim_params, train_params, config_params)
+
+        print(string.format('Iteration %d (ALL)'))
+        if not prune_params.notrain then
+            train.train(model, data_params.data, optim_params, train_params, config_params)
+        else
+            local acc_train = test.evaluate(model, data_params.data.train.data, data_params.data.train.labels, config_params)
+            print(string.format('\tTrain Accuracy: %f', acc_train*100))
+            local acc_validate = test.evaluate(model, data_params.data.validate.data, data_params.data.validate.labels, config_params)
+            print(string.format('\tValidate Accuracy: %f', acc_validate*100))
+            local acc_test = test.evaluate(model, data_params.data.test.data, data_params.data.test.labels, config_params)
+            print(string.format('\tTest Accuracy: %f', acc_test*100))
+        end
     end
 end
 
@@ -93,6 +125,7 @@ function M.createPruneCmdLine()
     cmd:option('-init', '', 'Initial factors to be applied in pruning (comma-separated)')
     cmd:option('-mult', '', 'Multiplier of factors (comma-separated, same size as init)')
     cmd:option('-stepIter', 1, 'Number of pruning steps to prune next layer(s)')
+    cmd:option('-notrain', false, 'True if training is not needed')
     return cmd
 end
 
@@ -103,6 +136,7 @@ function M.parsedCmdLineToPruneParams(parsed)
         init = util.csvToList(parsed.init),
         mult = util.csvToList(parsed.mult),
         stepIter = parsed.stepIter,
+        notrain = parsed.notrain,
     }
 end
 
