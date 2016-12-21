@@ -155,6 +155,19 @@ function M.parsedCmdLineToTrainParams(parsed)
     }
 end
 
+function M.updateSaveName(parsed)
+    if parsed.saveName == '' then
+        if parsed.model ~= '' then
+            local ext = paths.extname(parsed.model)
+            local path = paths.dirname(parsed.model)
+            local name = paths.basename(parsed.model, ext)
+            parsed.saveName = paths.concat(path, name)
+        else
+            parsed.saveName = parsed.modelType
+        end
+    end
+end
+
 function M.main(arg)
     -- arg: command line arguments
     local models = require('models')
@@ -166,16 +179,7 @@ function M.main(arg)
     cmd = util.mergeCmdLineOptions(cmd, dataset.createDataCmdLine())
 
     local parsed = cmd:parse(arg or {})
-    if parsed.saveName == '' then
-        if parsed.model ~= '' then
-            local ext = paths.extname(parsed.model)
-            local path = paths.dirname(parsed.model)
-            local name = paths.basename(parsed.model, ext)
-            parsed.saveName = paths.concat(path, name)
-        else
-            parsed.saveName = parsed.modelType
-        end
-    end
+    M.updateSaveName(parsed)
 
     local model_params = util.parsedCmdLineToModelParams(parsed)
     local optim_params = util.parsedCmdLineToOptimParams(parsed)

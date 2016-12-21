@@ -115,6 +115,7 @@ function M.main(arg)
     cmd = util.mergeCmdLineOptions(cmd, util.createModelCmdLine(false))
 
     local parsed = cmd:parse(arg)
+    train.updateSaveName(parsed)
 
     local prune_params = M.parsedCmdLineToPruneParams(parsed)
     local config_params = util.parsedCmdLineToConfigParams(parsed)
